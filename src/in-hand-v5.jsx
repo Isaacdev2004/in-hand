@@ -20,6 +20,13 @@ import {
   insertRating,
 } from "./lib/marketplaceApi";
 import { startStripeCheckout } from "./lib/stripeCheckout";
+import {
+  BellIcon,
+  figureInitials,
+  stripToastEmoji,
+  UI_FONT,
+  UserAvatar,
+} from "./lib/mobileUi";
 
 const LOGO_IMG = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBAUEBAYFBQUGBgYHCQ4JCQgICRINDQoOFRIWFhUSFBQXGiEcFxgfGRQUHScdHyIjJSUlFhwpLCgkKyEkJST/2wBDAQYGBgkICREJCREkGBQYJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCT/wAARCAB4AHgDASIAAhEBAxEB/8QAHQAAAQQDAQEAAAAAAAAAAAAABwAFBggBAwQCCf/EAFYQAAEDAwEEBAYLCA0NAAAAAAECAwQABQYRBwgSIRMxQVEUImFxgZEVGDJSdKGisbKz0xczNlVWcpSVFiU0NUJigqPBwtHS4SMmRUZTZIOEkpbD8fL/xAAaAQEBAAMBAQAAAAAAAAAAAAAAAQIDBAYF/8QAKxEAAgIBAgQEBgMAAAAAAAAAAAECAxEEMQUSIUETUXHRMkKBkaGxIpLB/9oADAMBAAIRAxEAPwC03RI94n1CtUl2JCjuSZK2GGGkla3HCEpQkdZJPICtrjiGm1OOKShCQVKUo6AAdZJql22/bRM2jXZ22W19bWNxllLLaTp4WoH76vvHvU9QHPrPIAzZbvSYhZXlxrHBfvzqCQXW9GY+vkWoEq84Tp5agUne0yRxR8Fxqxsp7A6pxwj0gpoDp89bAdKANR3qszV1WnHR/wABz+/WPbUZn+K8e/R3PtKDIVWdaAM3tp8z/FePfo7n2lY9tRmn4rx79Hc+0oNa6VgnnQBlO9Tmg/0Xjv6O59pXg71ea/ivHf0dz7Sg2pVeCqgDN7a/NEnnaMcP/LuD/wAldcXe5yRpY8LxmxPo7Q0pxsn0kqoFKNa1GqQtzh+9Rht9fRFvsJ/H3lnQOu6Ox9fKtIBT5ykDy0aY7kWWw3IjrZeZcSFocbIUlaT1EEciK+bKjRW2EbbZezu8M2e7SVu4zKcCHELOvgKifvqO5Ovuk9WnMcxzYGS6nRI94n1ClWUKStIUkhSSNQQdQRSqFBfvJZO7jWyu4JjuFt+5uIt6VJOhCV6lfyEqHpqlANWj3xZCkY3jkYHxXJ7iyPzWiP61VaSaqIbkmtgVWlJ0r0FUBuCuVZ4q1BdZ4qAdsasMvKr5Es8EtoekqI6R06IaQkFS3FHsSlIKj5qfn77s/szqolvxeTkaGzwm43C4OxunPvkNNacCT2cRJ0668bPVeBWvNL1p+4rE5GbV3OSXEMj5JXURhWqXenjDhNLWspJJQQOBPeSeQHn76JZGcErXmeGISVL2aQkgDUn2al8vjrUzm+DSAS3s2iq069L3LHz11tbueYltt1VvdCVgKAW6kEjzE/PXqRu+Zcoc4Chp2pdQP6az8KXkYeJHzORWXYR27NWvRfZQ/orMq2Y1luPXW6Y3b5dluNmaEqVbnZRlMvxisIU40tQCkqQVJ1SrUEHUGl9w3MYSSEQOPU6njfTy81OWN2CXgTd+GUWae9DuttXb1G3ymkvNpUtC1KHGCDyQB1dpo6prsVWRfcGaj2VqV1c+YNS7JMRt7VkGS4xcX7jZg8I0luU0G5VveUCUoeSklJSoA8K08iQRyNRBRrAyL0buOUPZTsntLklxTkmAV29xajqT0Z0QT/IKKVQrc2lKXhd+jE+K1dAoDu4mUf2UqhTj3y1aWzFR/vMn6CKrAFVZ3fN/ezFPhMn6CKq8DVRGbuk0SSToBzqdyLJimDtRo+Vx7td75IZbkOW6DJTFbgoWniQlxwpUpTpSQSlIATqNSTUTxi1qvuS2i0pGpnTmI3oW4lJ+Impe69KzLb5IkW63Kuy3b84+1ES6lsvtsuEhPErxUjgbHM8qA1OXbAGE8b2z7Jmk66cS74Uj1litf7Idm5/1Iv8A/wBwD7Gizt+v2aZq1jmEP4a5Z5l0nF6O2u5sP+EFtBGnickgFeuquXKhx7W/aiJDTBxxALmp4/DGShGmnuiFcuvl30Ax3zM7a7Y3bBjViVZbdJeQ/MU9LVKkSlI14ApZSkBCSSQkDrOpNPux59qDPdnvIC24qVSiD/CKB4o+mfPz7BTLm+yLM9nsRubf7UGobiw2JLDyXWwo9SVEc0k9mo512YYvwXGbo91FxtLQ9Ouv1grt4fX4mojE5tZLlpkyS3fMMiyeWubMuUkrcOoSlZCUjuA6gKi+SZZeMbZSpqQt1b6Vp43iVhHVzGp5HnW6Zkltx9hJnB9a3EKLTbWgJI6tSeoa0z5gIGQM29aLmw2V8g0OprlqdT1knTrNem4xxCmqp6arpLpt0x3/AF5HwuG6O2yxXz6x679x1hyLrPtsaS9NlJcdbC1DpCOZ8mteobVzVPZYEt91Lq9Chayoa9h59o66jNvzRFqjiHL4pfRgJQ4nQEJHf36DqqeY68g3aPIGhShJcGv5v+NdWl1Gn1dD5N4rrk0303ae3+WzfTA1Y6Gmo206OCBBTYlqWge56ZMprotPMonTzmhss86ndnk9Fs12g3M8lXCdbrcg94Lrj6h6m01ASa8Na05yx5nqa88iyWt3MFa49k47pzP1VKvO5d+D+T/DmfqqVajYeN886WzFPhMn6CKq7rVod9E6WzE/hMn6CKq2DyqojJ1sZCG9oUG4up1ZtDEq6r7h0DC1j5XDUw3S7Wq6bT3rm7qfY+3OvFR/2jikoHxFdQzAleAYnn156i1Z0W5s/wAeU+hB+QhdGTc9hx4lpyW7vvMNLkSWYjfSOJSeFCSo6anvcHqoCXXEjJN6a1sAcTWN2JchQPUl10kD4nE+qmvbtt2yTBM2tuNYwzblqLDT8hUlouKWpxZSlsaEcI0GuvX41dWx6fEvW1XablTspgJXObtsZS3UgKbb1B01PV4iKE16ksZzvUALdbVEbvDTPEVjg6KMkE8+rTVtXrqFDlvQXJuDscubTqU9JLkRo6B3L6UKOnmCFVWq2hUbD2RpoJMopHl4f/lNFre/yNh+14zZY8ll3p5bsx1LbgVoEJCU66HvcV6qEEyUlnHrHEB5tsuPrA98o/4V9ThHS9SfY4OI9asLuRy9J9nb6YTckGM2ylSljqHLqHpI1qOOIcjpKFNoBGoJ4ddfTpT/AAGmojMiSlaFOOrKdQrUJAPIf20wTX2y+622VFIVonnrqKx1uHGNkvjlmT9HsZabKlKEfhjhL6bntm1qXa3rhxDVCgkN947fnHx0Q8Xn8FnffK9XI0NaVEnXRQT/AOqhtpSh5h+GpZ4Dz17tRrr6xTnZnxFxq8gK14k9HqDyJUUj5ta79FJUJShtKDz6pnJqou3MZbqSx6MdJh8A2JWto6hd1yOTJP8AGQxHQ2PlOqqEGipcsHveU7PMHj483CuJhwJUh+KzOZ8J6Z19SykMlXGohCUcgCaFKtUkpUCCDoQRoQa8+fXLW7lv4P5P8OZ+qpUtyz8H8n+HM/VUqhTXvpfvZifwmT9BFVZ1q0u+p+9mJ/CZX0EVVgGqiE5SfY3YpIVro5e8iQ2PK3GjlR+W8KOmyPZhiX3E42Q3rFLfdrk7FlTgp6P0jqwCvo0DtOoSkAeWgNnZMHBcBtCB/lFQJV1Wke/kSCEfIaTVsskydGxfY/EmIiJku2yHEhMx1L4At0hKeZHPQHiJ07qgKofcF2lKgiYvCblwBPFw8KOPTyN8XF6NNaitox+5X67s2O2292TcX1lpuKEgKKgCSNFaaaaHXXTTSrnbCtq9z2rWa6TLna4kFyDJQwlUVSihziSVdSiSCOXb20G2IWXXDeIynIMAsMO4OW+e+0pyZ4kVpakdGoqVxJ8YkLIAOvMnSqCEs7vm05CuIYZNA8jjI/r1y5nab9jM2NCv+O3G2Lda6NpD6Ro7z58Kkkg9YHI1aSy3HbcbvDF4s2Ei2l5IlGNJc6VLevjFPjHVQHMDTnXNtyhsX667PMfUhK3ZmRNvcxzDTSCpz4iPVW6nUTqeYGuymNixIrZP2PbRIcRtlOEXlpLroQgJQlZKjr71RPZ1nkNKbL3saz7FrRIuV3xW4x4iAFOPjgcS0kdquFRKR5Tyq1W3bbNI2Uw7YLdbos64XNbpSmQpQbbbRw6khOhJJUAOfYaecazY5TsjTlt3gswxJtkmRIYSSpHAkOA6a89FBOuh76k75TlzPywWNUYrCKUYZjd8yW5OxLHZpt2eKPHbjN8QQnvUTySPORROxLYrljV+s9qvuHXCNaZdxYMx1akONBlOqlJWUKJAIGnPSjDs3Tb9kW78zf1Qwp72P9lZKfcqkOuadGknzKQkdw1ps2G7dsi2n5TPtN0tFrjxo8NUkPROkCkELSkJPEo6g8R7uqso6myMORbe5i6IOXM9yIbdMKxzGc2wG0YfZotmuE2aHVPReIL+/NoRzJOmh4jy7qDO0mWxP2iZRKipSlh27SlNhPVp0qufp6/TRxz+5ouW9BbVOHij41A8Lc16k9Cw5JPyimq1qeW+pTzh1W4StR7yTqfnrQbS1+5X+D2T/DmfqjSpblf4PZP8OZ+qNKoU176o/anE1dglSR/Np/sqqquIpITzURy8/ZVtt9CGteIY9MAPCzclNk93G0rT6NVWsK4yL7bFzSBFTMYLxPYjpE8Xxa1SBKyS0C8bc8fxRI4mrf7F2kp7g002XPj46J++BfA3i1itCVaKmz1yVJHaltGg+NweqgfnTt/tW2XIpESY5Au6LrJdZkId6NSQpRKSlXlQoad4Nc18j5dlK2Hsiv7k9UdJS0qZJU50YJ1IGo5akD1V0U6O65Zri2jVZqK63icsFl92OG3j2yBF1eHCJcmTPcJ94jxR8TZp03fX25+ytm5xnGhMucubLkuAcXDIW6r3Q7SBwcu7z1Vxi7ZNbrSLOnaDIi21LSmRDalqDQbVrqnh100Op5eU1zWC8yMR6T2Fzu4W0OHVxMArSlZHaQDoT5a2vh16+JJesor/AEwWrqe2X9H7Fp8EwTafaMmbueV7RV3i2thesFpKgl5RSQNdUgAAnXQdwr3dnPZveGsMThKm8fsUico9iXH1dGn06aVV17aBcfDvDnNoOVuSuAth1L60qCToSBqeQ5D1Vyt53JZuT1yZynLVXCQ2lp2SiVwuuIT7lJVrqQOwVg9HJbyj/ZP9FWoT2i/syfb2t7M7aLEtzatU222tp4e5bilLPxcFF7aYoYLu3vW1PiLRaottA71OcCV/EV1VeW6rIJy58mLlF0mOkFUh1ZccXoABqrhJOgA9VPlxVneTxPA5tt2gXWKVBYZkOPuo4h1HQtkajU1g6EvnX59jNWN/K/x7lrs4w8bQNlQxyzXFiIzLixTGkKSVtqbRwKAOnPQhIGoph2H7FpWytV0kXC5R50y4pbZT4O2pKG0JJPWrmSSR2dlV+stv2vWWGIVisu0KBEHuWWVPJbT5k8Gg9FbWMb25F5aosPO4q318bjjsp1AUrTTiUpRAHLtJ5VqlBLaSf39jNSb7HdOvJuOV7X8rKtUNQpEJlXlefRHTp/ISqhAdB1dVTvJ3IWGYm7h8a4x7nerlLbmXqRFc6RlgN8XRx0udS1BSlLWoctdBz0qBa1iUtpuVp/zbyZXfPaH81/jSru3MIam8AvMsjRL91KUnv4WWx85pVCk93gMNezfZZd4ERouzYwTOjIHWpbR4ikeUp4gPKaoDqFDvBFfUOqi7w+7vOtNxl5diEJcm2SFKemQWE6riLPNS0JHW2esgc08+zqEBkzmmN5XbIdvz6DcfDYLSY8a+2soVILKeSW3216B0JHIK1CtOXOvCoOyaKNXr/mlz7kM25hj0arcV81QXkefXSqgnPs7ssg8ouEZFcT76dektA+hpv+ms/dDxqKP2u2WYwg9hmvyZR+NYB9VQWs0BOk7YLnH/AHBi2EW89hZsbSiPSvipHbjtBHKPeo8NPYIlujM6f9LdQWlQEwf2ybR5OoXm19SD2NySgfJ0ptf2hZrJOr+YZE5+dcXv71MOtLWgHB3Jr+/99vt2c/PmOH+tXI9PmyUFL02U6k9YW8pQPrNaaxrQGAAnqFZpE1ZHd03d5s24xMxzCEuNBjqD0GA+nRchY5pccSepA6wDzUdD1dYB12E4a7g2y+y2uW30c1xsy5ST1pddPEUnypBSn+TSqf0qhRUqVKgBzmu79s+zl9yXPsohznDquXb19A4o96gPFUfKQTQ2nbldhcWTByy7R0dgejtOkekcNKlQHArckY/g5096bYn7SvPtJG/y6c/Vg+0pUqAz7SVv8unP1YPtKx7SVv8ALtz9WD7SlSoDPtJWvy6c/Vg+0rHtJG/y6c/Vg+0pUqAynckY18bOnvRbE/aU4QdyqwNrBn5ZdpCO0Mx2mifSeKlSoAlYTsB2f4I+3Lt1lTKnNnVEuevp3EnvTr4qT5QAaItKlQCpUqVAf//Z';
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
@@ -59,7 +66,7 @@ const PLATFORM_FEE = 0.05;      // 5% on sales
 const TRADE_FEE    = 2.00;      // $2 flat per party per trade
 
 // ─── CONDITION HELPERS ────────────────────────────────────────────────────────
-const condLabel = (isNew) => isNew ? "Brand New 📦" : "Used";
+const condLabel = (isNew) => (isNew ? "Brand New" : "Used");
 const condColor = (isNew) => isNew ? "#3A7BD5" : "#888";
 const condBg    = (isNew) => isNew ? "#f0f0ff" : "#EEF2F7";
 
@@ -92,11 +99,11 @@ function getPriceBadge(listingPrice, mv, isNew) {
   const tier = isNew ? mv.new : mv.used;
   if (!tier) return null;
   const pct = ((listingPrice - tier.avg) / tier.avg) * 100;
-  if (pct <= -15) return { label:"🔥 Great Deal",  color:"#00b894", bg:"#e8fff6", short:"Great Deal"  };
-  if (pct <= -5)  return { label:"🟢 Fair Price",  color:"#00b894", bg:"#e8fff6", short:"Fair"         };
-  if (pct <= 10)  return { label:"🟡 At Market",   color:"#f0932b", bg:"#fff8e6", short:"At Market"   };
-  if (pct <= 25)  return { label:"🔴 Above Market",color:"#ff6b6b", bg:"#fff0f0", short:"Above Mkt"   };
-  return               { label:"⚠️ Overpriced",  color:"#ff6b6b", bg:"#fff0f0", short:"Overpriced"  };
+  if (pct <= -15) return { label:"Great deal", color:"#1f7a5c", bg:"#edf7f2", short:"Great deal" };
+  if (pct <= -5)  return { label:"Fair price", color:"#1f7a5c", bg:"#edf7f2", short:"Fair" };
+  if (pct <= 10)  return { label:"At market", color:"#9a6700", bg:"#fbf4df", short:"At market" };
+  if (pct <= 25)  return { label:"Above market", color:"#b42318", bg:"#fdeeed", short:"Above market" };
+  return { label:"Overpriced", color:"#b42318", bg:"#fdeeed", short:"Overpriced" };
 }
 
 // ─── MARKET BADGE ─────────────────────────────────────────────────────────────
@@ -394,16 +401,16 @@ function CyclingSubtitle() {
   useEffect(() => { const t = setInterval(() => { setIdx(i=>(i+1)%WORDS.length); setKey(k=>k+1); }, 2400); return ()=>clearInterval(t); }, []);
   return (
     <div style={{ display:"flex", alignItems:"center", gap:5, height:16, overflow:"hidden" }}>
-      <span style={{ fontSize:9, fontWeight:900, color:"#888", letterSpacing:1.5 }}>ACTION FIGURES ·</span>
+      <span>Collector marketplace</span>
       <span key={key} className="cycle-word" style={{ fontSize:9, fontWeight:900, color:WORDS[idx].color, letterSpacing:2 }}>{WORDS[idx].text}</span>
     </div>
   );
 }
 
 // ─── SHARED STYLES ────────────────────────────────────────────────────────────
-const IS = { background:"#f7f7f7", border:"1.5px solid #DCE6F0", borderRadius:12, padding:"10px 14px", fontSize:13, fontFamily:"'Poppins',sans-serif", fontWeight:500, color:"#2C3E50", width:"100%", outline:"none" };
+const IS = { background:"#fff", border:"1px solid #d8e0ea", borderRadius:14, padding:"12px 14px", fontSize:14, fontFamily:UI_FONT, fontWeight:500, color:"#15202b", width:"100%", outline:"none" };
 const TS = (on) => ({ flex:1, background:on?"#2C3E50":"#E4EBF2", border:"none", borderRadius:10, padding:"9px", textAlign:"center", fontSize:12, fontWeight:700, color:on?"#fff":"#aaa", cursor:"pointer", transition:"all 0.15s" });
-const Btn = ({children, onClick, style={}}) => <button onClick={onClick} style={{ border:"none", borderRadius:12, padding:"12px", fontWeight:800, fontSize:14, cursor:"pointer", fontFamily:"'Poppins',sans-serif", ...style }}>{children}</button>;
+const Btn = ({children, onClick, style={}}) => <button onClick={onClick} style={{ border:"none", borderRadius:12, padding:"12px", fontWeight:700, fontSize:14, cursor:"pointer", fontFamily:UI_FONT, ...style }}>{children}</button>;
 
 // ─── CHECKOUT MODAL ───────────────────────────────────────────────────────────
 function CheckoutModal({ card, seller, myUser, onConfirm, onClose }) {
@@ -1128,7 +1135,7 @@ function FigureImage({ card, size=62, borderRadius=16, onClick, style={} }) {
     <div onClick={onClick} style={{ width:size, height:size, borderRadius, background:light, flexShrink:0, overflow:"hidden", cursor:onClick?"pointer":"default", position:"relative", ...style }}>
       {hasPhotos
         ? <img src={card.photos[0]} alt={card.name} style={{ width:"100%", height:"100%", objectFit:"cover" }} />
-        : <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:size*0.55 }}>{card.image}</div>
+        : <div className="inhand-figure-fallback">{figureInitials(card.name)}</div>
       }
       {hasPhotos && card.photos.length > 1 && (
         <div style={{ position:"absolute", bottom:4, right:4, background:"rgba(0,0,0,0.6)", borderRadius:6, fontSize:9, color:"#fff", padding:"1px 5px", fontWeight:700 }}>+{card.photos.length-1}</div>
@@ -3039,36 +3046,28 @@ function NotificationCenter({ notifications, onMarkRead, onMarkAllRead, onClose,
 // ─── ONBOARDING ───────────────────────────────────────────────────────────────
 const ONBOARDING_SLIDES = [
   {
-    emoji: "🗃️",
-    title: "Build Your Vault",
-    body: "Add your action figures with photos, condition, and value. Your vault is your collection — everything you own, want to sell, or trade.",
-    cta: "Next →",
-    bg: "linear-gradient(135deg,#2C3E50,#3A7BD5)",
-    accent: "#90B8E8",
+    kicker: "Collection",
+    title: "Build your vault",
+    body: "Catalog figures with photos, condition, and value. Keep inventory, sale, and trade listings in one place.",
+    cta: "Continue",
   },
   {
-    emoji: "⇄",
-    title: "Trade Smarter",
-    body: "Swipe through other collectors' vaults. Our algorithm matches you with the best trades based on value, wishlist, and toy line. No more mismatched offers.",
-    cta: "Next →",
-    bg: "linear-gradient(135deg,#3A7BD5,#4A90D9)",
-    accent: "#EAF1FA",
+    kicker: "Matching",
+    title: "Trade with better fit",
+    body: "Review collector listings by line, value, and wishlist overlap before you propose a trade.",
+    cta: "Continue",
   },
   {
-    emoji: "🔒",
-    title: "Safe & Protected",
-    body: "Every purchase is held in escrow until delivery is confirmed. Funds auto-release 7 days after delivery. Dispute system protects you if anything goes wrong.",
-    cta: "Next →",
-    bg: "linear-gradient(135deg,#00b894,#00cec9)",
-    accent: "#d1fadf",
+    kicker: "Protection",
+    title: "Escrow-backed deals",
+    body: "Purchases stay in escrow until delivery is confirmed. Disputes pause release when something goes wrong.",
+    cta: "Continue",
   },
   {
-    emoji: "🔥",
-    title: "Never Miss a Find",
-    body: "Set your wishlist tags — vintage, G.I. Joe, Star Wars, whatever you collect. Get notified the moment a matching figure is listed. First come, first traded.",
-    cta: "Let's Go! 🤜",
-    bg: "linear-gradient(135deg,#2980B9,#2C3E50)",
-    accent: "#90B8E8",
+    kicker: "Alerts",
+    title: "Catch listings early",
+    body: "Wishlist tags surface new matches as soon as relevant figures are listed.",
+    cta: "Enter marketplace",
     last: true,
   },
 ];
@@ -3078,45 +3077,27 @@ function OnboardingScreen({ onComplete }) {
   const s = ONBOARDING_SLIDES[slide];
 
   return (
-    <div style={{ minHeight:"100vh", background:s.bg, display:"flex", flexDirection:"column", fontFamily:"'Poppins',sans-serif", transition:"background 0.4s ease", maxWidth:430, margin:"0 auto" }}>
-      <style>{`@keyframes slideIn{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}`}</style>
-
-      {/* Skip */}
-      <div style={{ padding:"20px 24px 0", display:"flex", justifyContent:"flex-end" }}>
-        <button onClick={onComplete} style={{ background:"rgba(255,255,255,0.15)", border:"none", borderRadius:20, padding:"6px 16px", color:"rgba(255,255,255,0.8)", fontSize:12, fontWeight:600, cursor:"pointer" }}>Skip</button>
-      </div>
-
-      {/* Content */}
-      <div key={slide} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"20px 32px 40px", animation:"slideIn 0.35s ease" }}>
-        {/* Logo */}
-        <div style={{ width:56, height:56, borderRadius:16, overflow:"hidden", marginBottom:32, boxShadow:"0 8px 24px rgba(0,0,0,0.3)" }}>
-          <img src={LOGO_IMG} alt="In Hand" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+    <div className="inhand-onboarding">
+      <div style={{ padding:"20px 24px 0", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+        <div className="inhand-brand-logo" style={{ width:40, height:40 }}>
+          <img src={LOGO_IMG} alt="In Hand" />
         </div>
-
-        {/* Emoji */}
-        <div style={{ fontSize:80, marginBottom:24, filter:"drop-shadow(0 8px 24px rgba(0,0,0,0.3))", lineHeight:1 }}>{s.emoji}</div>
-
-        {/* Text */}
-        <div style={{ fontWeight:900, fontSize:26, color:"#fff", textAlign:"center", marginBottom:16, lineHeight:1.15 }}>{s.title}</div>
-        <div style={{ fontSize:15, color:"rgba(255,255,255,0.8)", textAlign:"center", lineHeight:1.7, maxWidth:320 }}>{s.body}</div>
+        <button type="button" onClick={onComplete} className="inhand-onboarding-cta" style={{ width:"auto", padding:"8px 14px", fontSize:12 }}>Skip</button>
       </div>
 
-      {/* Dots + CTA */}
-      <div style={{ padding:"0 32px 48px", display:"flex", flexDirection:"column", alignItems:"center", gap:24 }}>
-        {/* Dot indicators */}
-        <div style={{ display:"flex", gap:8 }}>
-          {ONBOARDING_SLIDES.map((_,i) => (
-            <div key={i} onClick={()=>setSlide(i)} style={{ width:i===slide?24:8, height:8, borderRadius:4, background:i===slide?"#fff":"rgba(255,255,255,0.35)", transition:"all 0.3s", cursor:"pointer" }} />
+      <div key={slide} className="inhand-onboarding-body">
+        <p className="inhand-onboarding-kicker">{s.kicker}</p>
+        <h1 className="inhand-onboarding-title">{s.title}</h1>
+        <p className="inhand-onboarding-copy">{s.body}</p>
+      </div>
+
+      <div className="inhand-onboarding-footer">
+        <div className="inhand-onboarding-dots">
+          {ONBOARDING_SLIDES.map((_, i) => (
+            <button key={i} type="button" onClick={() => setSlide(i)} data-active={i === slide ? "true" : "false"} aria-label={`Go to slide ${i + 1}`} />
           ))}
         </div>
-
-        {/* CTA button */}
-        <button
-          onClick={()=> s.last ? onComplete() : setSlide(i=>i+1)}
-          style={{ width:"100%", background:"rgba(255,255,255,0.2)", backdropFilter:"blur(10px)", border:"2px solid rgba(255,255,255,0.4)", borderRadius:16, padding:"16px", color:"#fff", fontWeight:800, fontSize:16, cursor:"pointer", transition:"all 0.2s" }}
-          onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.3)"}
-          onMouseLeave={e=>e.currentTarget.style.background="rgba(255,255,255,0.2)"}
-        >
+        <button type="button" className="inhand-onboarding-cta" onClick={() => (s.last ? onComplete() : setSlide((i) => i + 1))}>
           {s.cta}
         </button>
       </div>
@@ -3285,7 +3266,7 @@ function AppShell({ onSignOut, authUser }) {
   const myTxns = db.transactions.filter(t=>t.buyerId===CURRENT_USER_ID||t.sellerId===CURRENT_USER_ID);
 
   useEffect(() => { if(myTradeable.length&&!selectedOffer) setSelectedOffer(myTradeable[0]); }, [myTradeable.length]);
-  const notify = msg => { setToast(msg); setTimeout(()=>setToast(null),2500); };
+  const notify = msg => { setToast(stripToastEmoji(msg)); setTimeout(()=>setToast(null),2500); };
 
   const enriched = otherCards.map(c=>({ ...c, owner:getUser(c.ownerId), matchScore:computeMatch(myCards,c,myUser?.wishlist||[]) }));
   const filtered = enriched.filter(c=>{
@@ -3719,17 +3700,13 @@ function AppShell({ onSignOut, authUser }) {
   const txnAmt   = t => t.buyerId===CURRENT_USER_ID?t.amount:t.net;
 
   return (
-    <div style={{ minHeight:"100vh", background:"#EEF2F7", fontFamily:"'Poppins',sans-serif", maxWidth:430, margin:"0 auto", display:"flex", flexDirection:"column" }}>
+    <div className="inhand-shell">
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap');
-        *{box-sizing:border-box;margin:0;padding:0;} ::-webkit-scrollbar{width:0;}
-        @keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(8px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
         @keyframes wordSlideUp{0%{opacity:0;transform:translateY(8px)}15%{opacity:1;transform:translateY(0)}75%{opacity:1;transform:translateY(0)}90%{opacity:0;transform:translateY(-8px)}100%{opacity:0;transform:translateY(-8px)}}
         .cycle-word{display:inline-block;animation:wordSlideUp 2.4s ease-in-out infinite;}
-        input:focus,select:focus{outline:none;}
       `}</style>
 
-      {toast && <div style={{ position:"fixed",top:20,left:"50%",transform:"translateX(-50%)",background:"#2C3E50",color:"#fff",borderRadius:40,padding:"10px 22px",fontSize:13,fontWeight:700,zIndex:999,whiteSpace:"nowrap",animation:"toastIn 0.22s ease",boxShadow:"0 8px 24px rgba(0,0,0,0.18)" }}>{toast}</div>}
+      {toast && <div className="inhand-toast">{toast}</div>}
       {showAddCard && <AddCardModal onSave={handleAddCard} onClose={()=>setShowAddCard(false)} />}
       {showAddUser && <AddUserModal onSave={u=>{setDb(d=>({...d,users:[...d.users,u]}));notify(`✅ ${u.username} added!`);}} onClose={()=>setShowAddUser(false)} />}
       {checkoutCard && <CheckoutModal card={checkoutCard} seller={getUser(checkoutCard.ownerId)} myUser={myUser} onConfirm={(opts)=>handlePurchaseConfirm(checkoutCard,opts)} onClose={()=>setCheckoutCard(null)} />}
@@ -3848,56 +3825,53 @@ function AppShell({ onSignOut, authUser }) {
           onClose={() => setAddTrackingFor(null)} />;
       })()}
 
-      {/* HEADER */}
-      <div style={{ padding:"18px 20px 0", background:"#EEF2F7" }}>
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16 }}>
-          <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-            <div style={{ width:58, height:58, borderRadius:16, overflow:"hidden", flexShrink:0, boxShadow:"0 4px 14px rgba(0,0,0,0.18)" }}>
-              <img src={LOGO_IMG} alt="In Hand" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+      <header className="inhand-header">
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
+          <div className="inhand-brand-lockup">
+            <div className="inhand-brand-logo">
+              <img src={LOGO_IMG} alt="In Hand" />
             </div>
-            <CyclingSubtitle />
+            <div className="inhand-brand-copy">
+              <div className="inhand-brand-title">In Hand</div>
+              <CyclingSubtitle />
+            </div>
           </div>
-          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+          <div className="inhand-header-actions">
             {liked.length>0 && (
-              <div onClick={()=>setTab("trades")} style={{ background:"#4A90D9",color:"#fff",borderRadius:20,padding:"5px 13px",fontSize:12,fontWeight:800,cursor:"pointer" }}>
+              <button type="button" onClick={()=>setTab("trades")} className="inhand-pill" style={{ background:"#1f4f82", color:"#fff" }}>
                 {liked.length} pending
-              </div>
+              </button>
             )}
-            {/* Bell icon */}
-            <div onClick={()=>setShowNotifications(true)} style={{ position:"relative",width:38,height:38,borderRadius:"50%",background:"#fff",border:"1.5px solid #E4EBF2",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,cursor:"pointer",boxShadow:"0 2px 8px rgba(0,0,0,0.07)" }}>
-              🔔
-              {unreadNotifCount > 0 && (
-                <div style={{ position:"absolute",top:-3,right:-3,width:18,height:18,background:"#ff6b6b",borderRadius:"50%",fontSize:9,fontWeight:900,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",border:"2px solid #EEF2F7" }}>{unreadNotifCount > 9 ? "9+" : unreadNotifCount}</div>
-              )}
-            </div>
-            <div onClick={()=>setTab("account")} style={{ width:38,height:38,borderRadius:"50%",background:"#2C3E50",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,cursor:"pointer",flexShrink:0 }}>
-              {myUser?.avatar}
-            </div>
+            <button type="button" onClick={() => setShowNotifications(true)} className="inhand-icon-button" aria-label="Notifications">
+              <BellIcon />
+              {unreadNotifCount > 0 && <span className="inhand-badge-dot">{unreadNotifCount > 9 ? "9+" : unreadNotifCount}</span>}
+            </button>
+            <button type="button" onClick={() => setTab("account")} className="inhand-icon-button" aria-label="Account" style={{ border:"none", padding:0 }}>
+              <UserAvatar user={myUser} size={40} />
+            </button>
           </div>
         </div>
-        {/* TOP NAV */}
-        <div style={{ display:"flex", background:"#DCE6F0", borderRadius:14, padding:4, gap:2 }}>
-          {[["browse","🔍","Browse"],["trades","🤝","Trades"],["messages","💬","Chat"],["vault","🗃️","Vault"]].map(([id,icon,label])=>(
-            <button key={id} onClick={()=>{ setTab(id); if(id!=="messages") setActiveThread(null); }} style={{ flex:1,background:tab===id?"#fff":"transparent",border:"none",borderRadius:10,padding:"7px 2px",fontSize:10,fontWeight:tab===id?800:600,color:tab===id?"#2C3E50":"#aaa",cursor:"pointer",transition:"all 0.18s",boxShadow:tab===id?"0 2px 8px rgba(0,0,0,0.08)":"none",position:"relative" }}>
-              <div style={{ fontSize:15,marginBottom:1 }}>{icon}</div>
+        <div className="inhand-segmented">
+          {[["browse","Browse"],["trades","Trades"],["messages","Chat"],["vault","Vault"]].map(([id, label]) => (
+            <button key={id} type="button" data-active={tab === id ? "true" : "false"} onClick={() => { setTab(id); if (id !== "messages") setActiveThread(null); }}>
               {label}
-              {id==="messages"&&unreadCount>0&&<div style={{ position:"absolute",top:2,right:4,width:14,height:14,background:"#4A90D9",borderRadius:"50%",fontSize:8,fontWeight:800,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center" }}>{unreadCount}</div>}
             </button>
           ))}
         </div>
-      </div>
+      </header>
 
       {/* ── BROWSE ── */}
       {tab==="browse" && (
-        <div style={{ flex:1,overflowY:"auto",padding:"16px 20px 90px" }}>
-          <div style={{ position:"relative",marginBottom:12 }}>
-            <span style={{ position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",fontSize:14,color:"#ccc" }}>🔍</span>
-            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search figures, lines, collectors…" style={{...IS,paddingLeft:36}} />
+        <main className="inhand-main">
+          <div className="inhand-search">
+            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search figures, lines, collectors" style={IS} />
           </div>
           {/* Brand filter */}
-          <div style={{ display:"flex",gap:6,overflowX:"auto",paddingBottom:4,marginBottom:8 }}>
-            {ALL_BRANDS.map(brand=>(
-              <button key={brand} onClick={()=>{ setBrandFilter(brand); setLineFilter("All"); }} style={{ flexShrink:0,background:brandFilter===brand?"#2C3E50":"#fff",border:"1.5px solid",borderColor:brandFilter===brand?"#2C3E50":"#DCE6F0",borderRadius:20,padding:"5px 13px",fontSize:11,fontWeight:700,color:brandFilter===brand?"#fff":"#888",cursor:"pointer",whiteSpace:"nowrap" }}>{brand}</button>
+          <div className="inhand-chip-row">
+            {ALL_BRANDS.map(brand => (
+              <button key={brand} type="button" className="inhand-chip" data-active={brandFilter === brand ? "true" : "false"} onClick={() => { setBrandFilter(brand); setLineFilter("All"); }}>
+                {brand}
+              </button>
             ))}
           </div>
           {/* Line filter — shows only lines for selected brand */}
@@ -3911,24 +3885,23 @@ function AppShell({ onSignOut, authUser }) {
           )}
           <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:14 }}>
             <div style={{ display:"flex",background:"#DCE6F0",borderRadius:10,padding:3,gap:2 }}>
-              {[["all","All"],["trade","⇄"],["buy","💰"]].map(([f,l])=><button key={f} onClick={()=>setTypeFilter(f)} style={{ background:typeFilter===f?"#fff":"transparent",border:"none",borderRadius:7,padding:"4px 9px",fontSize:11,fontWeight:700,color:typeFilter===f?"#2C3E50":"#aaa",cursor:"pointer" }}>{l}</button>)}
+              {[["all","All"],["trade","Trade"],["buy","Buy"]].map(([f,l])=><button key={f} onClick={()=>setTypeFilter(f)} style={{ background:typeFilter===f?"#fff":"transparent",border:"none",borderRadius:7,padding:"4px 9px",fontSize:11,fontWeight:700,color:typeFilter===f?"#2C3E50":"#aaa",cursor:"pointer" }}>{l}</button>)}
             </div>
             <div style={{ display:"flex",background:"#DCE6F0",borderRadius:10,padding:3,gap:2 }}>
               {[["match","% Match"],["value","$ Value"]].map(([s,l])=><button key={s} onClick={()=>setSortBy(s)} style={{ background:sortBy===s?"#fff":"transparent",border:"none",borderRadius:7,padding:"4px 9px",fontSize:11,fontWeight:700,color:sortBy===s?"#2C3E50":"#aaa",cursor:"pointer" }}>{l}</button>)}
             </div>
             <div style={{ marginLeft:"auto",display:"flex",background:"#DCE6F0",borderRadius:10,padding:3,gap:2 }}>
-              {[["list","☰"],["grid","⊞"]].map(([v,i])=><button key={v} onClick={()=>setViewMode(v)} style={{ background:viewMode===v?"#fff":"transparent",border:"none",borderRadius:7,padding:"4px 9px",fontSize:13,cursor:"pointer" }}>{i}</button>)}
+              {[["list","List"],["grid","Grid"]].map(([v,i])=><button key={v} onClick={()=>setViewMode(v)} style={{ background:viewMode===v?"#fff":"transparent",border:"none",borderRadius:7,padding:"4px 9px",fontSize:13,cursor:"pointer" }}>{i}</button>)}
             </div>
           </div>
           <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12 }}>
             <div style={{ fontSize:12,color:"#bbb",fontWeight:600 }}>{filtered.length} listings</div>
-            {filtered.length>0&&<button onClick={()=>launchSwipe(filtered)} style={{ background:"linear-gradient(135deg,#4A90D9,#2980B9)",border:"none",borderRadius:20,padding:"5px 14px",color:"#fff",fontSize:11,fontWeight:800,cursor:"pointer",boxShadow:"0 3px 10px rgba(253,121,168,0.4)" }}>Swipe {filtered.length} ✦</button>}
+            {filtered.length>0&&<button type="button" onClick={() => launchSwipe(filtered)} className="inhand-pill" style={{ background:"#1f4f82", color:"#fff" }}>Review {filtered.length}</button>}
           </div>
           {filtered.length === 0 && (
-            <div style={{ textAlign:"center",padding:"48px 20px",background:"#fff",borderRadius:24,border:"2px dashed #DCE6F0" }}>
-              <div style={{ fontSize:52,marginBottom:12 }}>🔍</div>
-              <div style={{ fontWeight:800,fontSize:18,color:"#2C3E50",marginBottom:6 }}>No listings found</div>
-              <div style={{ fontSize:13,color:"#aaa",lineHeight:1.6,marginBottom:20 }}>Try adjusting your filters or search for something else.</div>
+            <div className="inhand-empty">
+              <h3>No listings found</h3>
+              <p>Try adjusting your filters or search for something else.</p>
               <button onClick={()=>{ setSearch(""); setLineFilter("All"); setTypeFilter("all"); }} style={{ background:"#2C3E50",border:"none",borderRadius:12,padding:"10px 22px",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer" }}>Clear Filters</button>
             </div>
           )}
@@ -3936,19 +3909,19 @@ function AppShell({ onSignOut, authUser }) {
             ? filtered.map(card => {
                 const {from,light}=lc(card.line); const sc=card.matchScore>=85?"#00b894":card.matchScore>=70?"#f9ca24":"#4A90D9";
                 return (
-                  <div key={card.id} style={{ background:"#fff",borderRadius:18,padding:"14px",boxShadow:"0 2px 12px rgba(0,0,0,0.05)",border:"1px solid #E4EBF2",marginBottom:10 }}>
+                  <div key={card.id} className="inhand-listing-card">
                     <div style={{ display:"flex",gap:12,alignItems:"center" }}>
                       <FigureImage card={card} size={62} borderRadius={16} onClick={card.photos?.length>0?()=>setPhotoViewer({photos:card.photos,startIdx:0}):undefined} />
                       <div style={{ flex:1,minWidth:0 }}>
                         <div style={{ fontWeight:800,fontSize:14,color:"#2C3E50" }}>{card.name}</div>
-                        <div style={{ fontSize:11,color:"#aaa",marginTop:1 }}>{card.brand ? `${card.brand==="Custom"?"🎨 Custom":card.brand} · ` : ""}{card.line}</div>
+                        <div style={{ fontSize:11,color:"#8a97a6",marginTop:1 }}>{card.brand ? `${card.brand} · ` : ""}{card.line}</div>
                         {card.description && <div style={{ fontSize:11,color:"#888",marginTop:3,lineHeight:1.4,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden" }}>{card.description}</div>}
                         <div style={{ display:"flex",gap:6,marginTop:6,alignItems:"center",flexWrap:"wrap" }}>
                           <span style={{ fontSize:10,fontWeight:800,background:condBg(card.isNew),color:condColor(card.isNew),borderRadius:6,padding:"2px 8px" }}>{condLabel(card.isNew)}</span>
                           <span style={{ fontSize:13,fontWeight:800,color:from }}>${card.value}</span>
                           <MarketBadge name={card.name} value={card.value} isNew={card.isNew} mini />
-                          {card.wantsTrade&&<span style={{ fontSize:9,fontWeight:700,background:"#e8fff6",color:"#00b894",borderRadius:6,padding:"2px 6px" }}>⇄</span>}
-                          {card.wantsBuy&&<span style={{ fontSize:9,fontWeight:700,background:"#fff8e6",color:"#f0932b",borderRadius:6,padding:"2px 6px" }}>💰</span>}
+                          {card.wantsTrade && <span style={{ fontSize:10,fontWeight:600,background:"#edf7f2",color:"#1f7a5c",borderRadius:999,padding:"2px 8px" }}>Trade</span>}
+                          {card.wantsBuy && <span style={{ fontSize:10,fontWeight:600,background:"#fbf4df",color:"#9a6700",borderRadius:999,padding:"2px 8px" }}>Buy</span>}
                         </div>
                         {/* Market avg line */}
                         {(() => { const mv=getMarketValue(card.name); const tier=card.isNew?mv?.new:mv?.used; return tier ? (
@@ -3964,13 +3937,13 @@ function AppShell({ onSignOut, authUser }) {
                       </div>
                     </div>
                     <div style={{ display:"flex",alignItems:"center",gap:6,marginTop:10,paddingTop:10,borderTop:"1px solid #EEF2F7" }}>
-                      <span style={{ fontSize:16 }}>{card.owner?.avatar}</span>
+                      <UserAvatar user={card.owner} size={28} style={{ borderRadius:10, fontSize:10 }} />
                       <span style={{ fontSize:11,fontWeight:700,color:"#888" }}>{card.owner?.username}</span>
-                      <span style={{ fontSize:10,color:"#ccc" }}>⭐ {card.owner?.rating}</span>
+                      <span style={{ fontSize:10,color:"#8a97a6" }}>Rating {card.owner?.rating}</span>
                       <div style={{ marginLeft:"auto",display:"flex",gap:6 }}>
-                        <button onClick={()=>setMarketModal(card)} style={{ background:"#EAF1FA",border:"none",borderRadius:10,padding:"6px 10px",color:"#3A7BD5",fontWeight:700,fontSize:11,cursor:"pointer" }}>📊</button>
-                        <button onClick={()=>setShareCard(card)} style={{ background:"#EEF2F7",border:"none",borderRadius:10,padding:"6px 10px",color:"#555",fontWeight:700,fontSize:11,cursor:"pointer" }}>↗️</button>
-                        {card.wantsTrade&&<button onClick={()=>openThread(card.owner?.id||card.ownerId, card)} style={{ background:"#EEF2F7",border:"none",borderRadius:10,padding:"6px 12px",color:"#555",fontWeight:700,fontSize:11,cursor:"pointer" }}>💬</button>}
+                        <button type="button" onClick={() => setMarketModal(card)} className="inhand-text-button">Market</button>
+                        <button type="button" onClick={() => setShareCard(card)} className="inhand-text-button">Share</button>
+                        {card.wantsTrade && <button type="button" onClick={() => openThread(card.owner?.id || card.ownerId, card)} className="inhand-text-button">Message</button>}
                         {card.wantsBuy&&<button onClick={()=>setCheckoutCard(card)} style={{ background:"#2C3E50",border:"none",borderRadius:10,padding:"6px 14px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer" }}>Buy ${card.value}</button>}
                       </div>
                     </div>
@@ -4008,7 +3981,7 @@ function AppShell({ onSignOut, authUser }) {
                 })}
               </div>
           }
-        </div>
+        </main>
       )}
 
       {/* ── MESSAGES ── */}
@@ -4840,20 +4813,14 @@ function AppShell({ onSignOut, authUser }) {
         </div>
       )}
 
-      {/* BOTTOM NAV */}
-      <div style={{ position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:430,background:"rgba(255,255,255,0.97)",backdropFilter:"blur(12px)",borderTop:"1px solid #E4EBF2",padding:"10px 20px 16px",display:"flex",justifyContent:"space-around" }}>
-        {[["wallet","💰","Wallet"],["messages","💬","Chat"],["shipping","📦","Ship"],["account","👤","Account"]].map(([id,icon,label])=>(
-          <button key={id} onClick={()=>{ setTab(id); if(id!=="messages") setActiveThread(null); }} style={{ background:"none",border:"none",display:"flex",flexDirection:"column",alignItems:"center",gap:2,cursor:"pointer",position:"relative" }}>
-            <span style={{ fontSize:tab===id?22:18,transition:"font-size 0.18s" }}>{icon}</span>
-            <span style={{ fontSize:9,fontWeight:tab===id?800:600,color:tab===id?"#2C3E50":"#ccc" }}>{label}</span>
-            {tab===id&&<div style={{ position:"absolute",bottom:-14,left:"50%",transform:"translateX(-50%)",width:4,height:4,borderRadius:"50%",background:"#4A90D9" }} />}
-            {id==="trades"&&liked.length>0&&<div style={{ position:"absolute",top:-2,right:-4,width:16,height:16,background:"#4A90D9",borderRadius:"50%",fontSize:9,fontWeight:800,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center" }}>{liked.length}</div>}
-            {id==="messages"&&unreadCount>0&&<div style={{ position:"absolute",top:-2,right:-4,width:16,height:16,background:"#4A90D9",borderRadius:"50%",fontSize:9,fontWeight:800,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center" }}>{unreadCount}</div>}
-            {id==="shipping"&&(db.shipments||[]).some(s=>(s.fromUser===CURRENT_USER_ID||s.toUser===CURRENT_USER_ID)&&s.status==="in_transit")&&<div style={{ position:"absolute",top:-2,right:-4,width:8,height:8,background:"#3A7BD5",borderRadius:"50%",border:"2px solid #fff" }} />}
-            {id==="db"&&(db.disputes||[]).some(d=>d.status==="open")&&<div style={{ position:"absolute",top:-2,right:-4,width:16,height:16,background:"#ff6b6b",borderRadius:"50%",fontSize:9,fontWeight:800,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center" }}>{(db.disputes||[]).filter(d=>d.status==="open").length}</div>}
+      <nav className="inhand-bottom-nav" aria-label="Primary">
+        {[["wallet","Wallet"],["messages","Chat"],["shipping","Ship"],["account","Account"]].map(([id, label]) => (
+          <button key={id} type="button" data-active={tab === id ? "true" : "false"} onClick={() => { setTab(id); if (id !== "messages") setActiveThread(null); }}>
+            <span aria-hidden="true" />
+            <span>{label}</span>
           </button>
         ))}
-      </div>
+      </nav>
     </div>
   );
 }
