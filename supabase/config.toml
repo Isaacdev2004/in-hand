@@ -1,0 +1,10 @@
+# Supabase CLI: https://supabase.com/docs/guides/cli
+# Edge Functions: deploy with `supabase functions deploy <name>`
+
+[functions.create-checkout-session]
+# Set to true once Supabase Auth is wired; pass the user's JWT from the app.
+verify_jwt = false
+
+[functions.stripe-webhook]
+# Stripe sends no JWT; verification is via stripe-signature + STRIPE_WEBHOOK_SECRET.
+verify_jwt = false

@@ -1,0 +1,6 @@
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import InHand from './in-hand-v5';
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<InHand />);
