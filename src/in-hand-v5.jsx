@@ -20,6 +20,7 @@ import {
   insertRating,
 } from "./lib/marketplaceApi";
 import { startStripeCheckout } from "./lib/stripeCheckout";
+import { ensureUserProfile, loadSessionProfile } from "./lib/authSession";
 import {
   BellIcon,
   figureInitials,
@@ -375,7 +376,28 @@ const TRACKING_STEPS = ["Label Created","Accepted","In Transit","Out for Deliver
 const trackingStepIndex = (status) => status==="delivered"?4:status==="out_for_delivery"?3:status==="in_transit"?2:status==="accepted"?1:0;
 
 
-const CURRENT_USER_ID = "u1";
+const DEFAULT_USER_ID = "u1";
+
+const NAV_ITEMS = [
+  ["browse", "Browse"],
+  ["trades", "Trades"],
+  ["vault", "Vault"],
+  ["messages", "Chat"],
+  ["shipping", "Shipping"],
+  ["wallet", "Wallet"],
+  ["account", "Account"],
+];
+
+const EMPTY_DB = {
+  users: [],
+  cards: [],
+  transactions: [],
+  shipments: [],
+  disputes: [],
+  ratings: [],
+  messages: [],
+  notifications: [],
+};
 const fmt = (n) => n.toFixed(2);
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
@@ -1004,7 +1026,7 @@ function PhotoViewer({ photos, startIdx = 0, onClose }) {
 }
 
 // ─── ADD CARD MODAL ───────────────────────────────────────────────────────────
-function AddCardModal({ onSave, onClose }) {
+function AddCardModal({ onSave, onClose, ownerId }) {
   const [form, setForm] = useState({ name:"", brand:"Hasbro", line:"G.I. Joe", isNew:true, value:"", image:"🥷", photos:[], tags:"", description:"", wantsTrade:true, wantsBuy:false });
   const set = (k,v) => setForm(f => {
     const updated = {...f, [k]:v};
@@ -1094,7 +1116,7 @@ function AddCardModal({ onSave, onClose }) {
             <label style={TS(form.wantsBuy)} onClick={()=>set("wantsBuy",!form.wantsBuy)}>💰 For Sale</label>
           </div>
         </div>
-        <Btn onClick={()=>{ if(!form.name||!form.value) return; onSave({...form, value:parseInt(form.value), tags:form.tags.split(",").map(t=>t.trim().toLowerCase()).filter(Boolean), id:"c"+Date.now(), ownerId:CURRENT_USER_ID, listedAt:new Date().toISOString().split("T")[0]}); onClose(); }} style={{ background:"#2C3E50", color:"#fff", width:"100%", marginTop:16 }}>Save Figure</Btn>
+        <Btn onClick={()=>{ if(!form.name||!form.value) return; onSave({...form, value:parseInt(form.value), tags:form.tags.split(",").map(t=>t.trim().toLowerCase()).filter(Boolean), id:"c"+Date.now(), ownerId: ownerId, listedAt:new Date().toISOString().split("T")[0]}); onClose(); }} style={{ background:"#2C3E50", color:"#fff", width:"100%", marginTop:16 }}>Save Figure</Btn>
       </div>
     </div>
   );
@@ -2498,16 +2520,26 @@ function AuthScreen({ onAuth }) {
     }, 800);
   };
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     if (!form.email || !form.password) { setError("Enter your email and password"); return; }
     if (!form.email.includes("@")) { setError("Enter a valid email address"); return; }
+    if (!supabase) { setError("Sign-in requires Supabase configuration."); return; }
     setLoading(true);
-    // Mock login — dev replaces with Supabase signInWithPassword
-    setTimeout(() => {
+    setError("");
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: form.email,
+        password: form.password,
+      });
+      if (error) throw error;
+      const profile = await loadSessionProfile();
+      if (!profile) throw new Error("Could not load your profile.");
+      onAuth(profile);
+    } catch (err) {
+      setError(err?.message || "Sign-in failed.");
+    } finally {
       setLoading(false);
-      // Demo: any email/password works and logs in as the seed user
-      onAuth({ id:"u1", existing:true });
-    }, 1000);
+    }
   };
 
   const handleForgot = () => {
@@ -3108,13 +3140,51 @@ function OnboardingScreen({ onComplete }) {
 export default function InHand() {
   const [onboardingDone, setOnboardingDone] = useState(false);
   const [authUser, setAuthUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(!!supabase);
 
-  // Load persisted state on mount
   useEffect(() => {
     async function init() {
       try { const r = await window.storage.get("inhand-onboarded"); if (r) setOnboardingDone(true); } catch {}
     }
     init();
+  }, []);
+
+  useEffect(() => {
+    if (!supabase) {
+      setAuthLoading(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const profile = await loadSessionProfile();
+        if (!cancelled && profile) setAuthUser(profile);
+      } catch (err) {
+        console.error("In Hand: session restore failed", err);
+      } finally {
+        if (!cancelled) setAuthLoading(false);
+      }
+    })();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (!session?.user) {
+        setAuthUser(null);
+        return;
+      }
+      try {
+        const profile = await ensureUserProfile(session.user);
+        setAuthUser(profile);
+      } catch (err) {
+        console.error("In Hand: profile sync failed", err);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const completeOnboarding = async () => {
@@ -3124,17 +3194,30 @@ export default function InHand() {
 
   const handleSignOut = async () => {
     setAuthUser(null);
+    if (supabase) {
+      try { await supabase.auth.signOut(); } catch {}
+    }
   };
 
-  // Show onboarding first (only on first ever open)
   if (!onboardingDone) return <OnboardingScreen onComplete={completeOnboarding} />;
-
-  // MOCK MODE — bypass login, straight to app
-  return <AppShell onSignOut={handleSignOut} authUser={{ id:"u1", username:"VinylHunter_Rex", avatar:"🦖" }} />;
+  if (authLoading) return <div className="inhand-loading">Loading your account...</div>;
+  if (!supabase) {
+    return (
+      <div className="inhand-config-required">
+        <div>
+          <h1>Configuration required</h1>
+          <p>Add your Supabase URL and anon key in the deployment environment before using In Hand.</p>
+        </div>
+      </div>
+    );
+  }
+  if (!authUser) return <AuthScreen onAuth={setAuthUser} />;
+  return <AppShell onSignOut={handleSignOut} authUser={authUser} />;
 }
 
 function AppShell({ onSignOut, authUser }) {
-  const [db, setDb] = useState({ users:SEED_USERS, cards:SEED_CARDS, transactions:SEED_TRANSACTIONS, shipments:SEED_SHIPMENTS, disputes:SEED_DISPUTES, ratings:SEED_RATINGS, messages:SEED_MESSAGES, notifications:SEED_NOTIFICATIONS });
+  const activeUserId = authUser?.id || DEFAULT_USER_ID;
+  const [db, setDb] = useState(() => (supabase ? EMPTY_DB : { users:SEED_USERS, cards:SEED_CARDS, transactions:SEED_TRANSACTIONS, shipments:SEED_SHIPMENTS, disputes:SEED_DISPUTES, ratings:SEED_RATINGS, messages:SEED_MESSAGES, notifications:SEED_NOTIFICATIONS }));
   const [dbLoaded, setDbLoaded] = useState(false);
   const [tab, setTab] = useState("browse");
   const [viewMode, setViewMode] = useState("list");
@@ -3148,7 +3231,6 @@ function AppShell({ onSignOut, authUser }) {
   const [toast, setToast] = useState(null);
   const [selectedOffer, setSelectedOffer] = useState(null);
   const [showAddCard, setShowAddCard] = useState(false);
-  const [showAddUser, setShowAddUser] = useState(false);
   const [checkoutCard, setCheckoutCard] = useState(null);
   const [sweetenerTrade, setSweetenerTrade] = useState(null);
   const [trackingModal, setTrackingModal] = useState(null);
@@ -3177,7 +3259,7 @@ function AppShell({ onSignOut, authUser }) {
   // Wishlist match check — fires when new cards are added
   const checkWishlistMatch = (newCard) => {
     const hits = myUser?.wishlist?.filter(tag => newCard.tags?.includes(tag) || newCard.line===tag);
-    if (hits?.length && newCard.ownerId !== CURRENT_USER_ID) {
+    if (hits?.length && newCard.ownerId !== activeUserId) {
       const notif = { id:"n"+Date.now(), type:"wishlist_match", read:false, ts:new Date().toISOString().slice(0,16).replace("T"," "), title:"Wishlist match! 🔥", body:`${newCard.name} just listed — matches your wishlist`, cardId:newCard.id, link:"browse" };
       setDb(d=>({...d, notifications:[notif,...(d.notifications||[])]}));
     }
@@ -3188,7 +3270,7 @@ function AppShell({ onSignOut, authUser }) {
     async function load() {
       if (supabase) {
         try {
-          const userId = authUser?.id || CURRENT_USER_ID;
+          const userId = authUser?.id || activeUserId;
           const fromCloud = await fetchAppDatabaseShape(supabase, userId);
           if (!cancelled) setDb({
             users: fromCloud.users || [],
@@ -3203,7 +3285,7 @@ function AppShell({ onSignOut, authUser }) {
         } catch (e) {
           console.error("In Hand: Supabase load failed (check RLS policies and seed).", e);
           if (!cancelled) {
-            setDb({ users:SEED_USERS, cards:SEED_CARDS, transactions:SEED_TRANSACTIONS, shipments:SEED_SHIPMENTS, disputes:SEED_DISPUTES, ratings:SEED_RATINGS, messages:SEED_MESSAGES, notifications:SEED_NOTIFICATIONS });
+            setDb(EMPTY_DB);
           }
         }
       } else {
@@ -3226,7 +3308,7 @@ function AppShell({ onSignOut, authUser }) {
     let cancelled = false;
     (async () => {
       try {
-        const userId = authUser?.id || CURRENT_USER_ID;
+        const userId = authUser?.id || activeUserId;
         const fromCloud = await fetchAppDatabaseShape(supabase, userId);
         if (cancelled) return;
         setDb({
@@ -3259,11 +3341,11 @@ function AppShell({ onSignOut, authUser }) {
   }, [db, dbLoaded]);
 
   const getUser = id => db.users.find(u=>u.id===id);
-  const myUser = getUser(CURRENT_USER_ID);
-  const myCards = db.cards.filter(c=>c.ownerId===CURRENT_USER_ID);
+  const myUser = getUser(activeUserId);
+  const myCards = db.cards.filter(c=>c.ownerId===activeUserId);
   const myTradeable = myCards.filter(c=>c.wantsTrade);
-  const otherCards = db.cards.filter(c=>c.ownerId!==CURRENT_USER_ID);
-  const myTxns = db.transactions.filter(t=>t.buyerId===CURRENT_USER_ID||t.sellerId===CURRENT_USER_ID);
+  const otherCards = db.cards.filter(c=>c.ownerId!==activeUserId);
+  const myTxns = db.transactions.filter(t=>t.buyerId===activeUserId||t.sellerId===activeUserId);
 
   useEffect(() => { if(myTradeable.length&&!selectedOffer) setSelectedOffer(myTradeable[0]); }, [myTradeable.length]);
   const notify = msg => { setToast(stripToastEmoji(msg)); setTimeout(()=>setToast(null),2500); };
@@ -3326,7 +3408,7 @@ function AppShell({ onSignOut, authUser }) {
       try {
         await startStripeCheckout({
           listingId: card.id,
-          buyerId: CURRENT_USER_ID,
+          buyerId: activeUserId,
           successUrl: `${window.location.origin}?checkout=success`,
           cancelUrl: `${window.location.origin}?checkout=cancelled`,
         });
@@ -3340,8 +3422,8 @@ function AppShell({ onSignOut, authUser }) {
     const shippingRate = getShippingRate(card.value);
     const shipping = shippingRate.price;
     const grandTotal = parseFloat((total + shipping).toFixed(2));
-    const txn = { id:"t"+Date.now(), type:"purchase", buyerId:CURRENT_USER_ID, sellerId:card.ownerId, cardId:card.id, amount:card.value, fee, shipping, net:card.value-fee, status:"in_escrow", method:payMethod, date:new Date().toISOString().split("T")[0], cardName:card.name };
-    const shipment = { id:"sh"+Date.now(), txnId:txn.id, trackingNumber:"", carrier:"USPS Ground", status:"label_pending", estimatedDelivery:"", shippingCost:shipping, shippingLabel:shippingRate.label, fromUser:card.ownerId, toUser:CURRENT_USER_ID, figureName:card.name, figureValue:card.value, fundsReleased:false, events:[] };
+    const txn = { id:"t"+Date.now(), type:"purchase", buyerId:activeUserId, sellerId:card.ownerId, cardId:card.id, amount:card.value, fee, shipping, net:card.value-fee, status:"in_escrow", method:payMethod, date:new Date().toISOString().split("T")[0], cardName:card.name };
+    const shipment = { id:"sh"+Date.now(), txnId:txn.id, trackingNumber:"", carrier:"USPS Ground", status:"label_pending", estimatedDelivery:"", shippingCost:shipping, shippingLabel:shippingRate.label, fromUser:card.ownerId, toUser:activeUserId, figureName:card.name, figureValue:card.value, fundsReleased:false, events:[] };
     if (supabase) {
       const { error: txnErr } = await upsertTransaction(txn);
       if (txnErr) {
@@ -3364,7 +3446,7 @@ function AppShell({ onSignOut, authUser }) {
     }
     setDb(d => {
       const newUsers = d.users.map(u => {
-        if(u.id===CURRENT_USER_ID && payMethod==="wallet") return {...u, walletBalance:parseFloat((u.walletBalance-grandTotal).toFixed(2))};
+        if(u.id===activeUserId && payMethod==="wallet") return {...u, walletBalance:parseFloat((u.walletBalance-grandTotal).toFixed(2))};
         return u;
       });
       return { ...d, users:newUsers, cards:d.cards.filter(c=>c.id!==card.id), transactions:[txn,...d.transactions], shipments:[shipment,...(d.shipments||[])] };
@@ -3492,10 +3574,10 @@ function AppShell({ onSignOut, authUser }) {
     const txns = [];
     // Log sweetener payment if there's a difference
     if (sweetener > 0 && iOwe) {
-      txns.push({ id:"t"+Date.now()+"s", type:"sweetener", buyerId:CURRENT_USER_ID, sellerId:theirCard.ownerId, cardId:theirCard.id, amount:sweetener, fee, net:sweetener-fee, status:"completed", method:payMethod, date:new Date().toISOString().split("T")[0], cardName:`Sweetener: ${myFigure.name} ⇄ ${theirCard.name}` });
+      txns.push({ id:"t"+Date.now()+"s", type:"sweetener", buyerId:activeUserId, sellerId:theirCard.ownerId, cardId:theirCard.id, amount:sweetener, fee, net:sweetener-fee, status:"completed", method:payMethod, date:new Date().toISOString().split("T")[0], cardName:`Sweetener: ${myFigure.name} ⇄ ${theirCard.name}` });
     }
     // Log the trade itself with $2 fee per party
-    txns.push({ id:"t"+Date.now()+"t", type:"trade", buyerId:CURRENT_USER_ID, sellerId:theirCard.ownerId, cardId:theirCard.id, amount:0, fee:TRADE_FEE, net:0, status:"completed", method:"trade", date:new Date().toISOString().split("T")[0], cardName:`Trade: ${myFigure.name} ⇄ ${theirCard.name}` });
+    txns.push({ id:"t"+Date.now()+"t", type:"trade", buyerId:activeUserId, sellerId:theirCard.ownerId, cardId:theirCard.id, amount:0, fee:TRADE_FEE, net:0, status:"completed", method:"trade", date:new Date().toISOString().split("T")[0], cardName:`Trade: ${myFigure.name} ⇄ ${theirCard.name}` });
     if (supabase) {
       for (const t of txns) {
         const { error: txnErr } = await upsertTransaction(t);
@@ -3506,7 +3588,7 @@ function AppShell({ onSignOut, authUser }) {
         }
       }
       const { error } = await transferListingOwnership([
-        { id: theirCard.id, ownerId: CURRENT_USER_ID, wantsTrade: false, wantsBuy: false },
+        { id: theirCard.id, ownerId: activeUserId, wantsTrade: false, wantsBuy: false },
         { id: myFigure.id, ownerId: theirCard.ownerId, wantsTrade: false, wantsBuy: false },
       ]);
       if (error) {
@@ -3519,9 +3601,9 @@ function AppShell({ onSignOut, authUser }) {
     setDb(d => {
       const newUsers = d.users.map(u => {
         // Deduct sweetener from buyer's wallet if wallet used
-        if(u.id===CURRENT_USER_ID && iOwe && payMethod==="wallet") return {...u, walletBalance:parseFloat((u.walletBalance-total).toFixed(2))};
+        if(u.id===activeUserId && iOwe && payMethod==="wallet") return {...u, walletBalance:parseFloat((u.walletBalance-total).toFixed(2))};
         // Deduct $2 trade fee from both parties
-        if(u.id===CURRENT_USER_ID && !iOwe) return {...u, walletBalance:parseFloat((u.walletBalance-TRADE_FEE).toFixed(2))};
+        if(u.id===activeUserId && !iOwe) return {...u, walletBalance:parseFloat((u.walletBalance-TRADE_FEE).toFixed(2))};
         // Credit seller net sweetener minus their $2 fee
         if(u.id===theirCard.ownerId && iOwe) return {...u, walletBalance:parseFloat((u.walletBalance+(sweetener-sweetenerFee-TRADE_FEE)).toFixed(2))};
         if(u.id===theirCard.ownerId && !iOwe) return {...u, walletBalance:parseFloat((u.walletBalance-TRADE_FEE).toFixed(2))};
@@ -3529,7 +3611,7 @@ function AppShell({ onSignOut, authUser }) {
       });
       // Swap ownership of both figures
       const newCards = d.cards.map(c => {
-        if(c.id===theirCard.id) return {...c, ownerId:CURRENT_USER_ID, wantsTrade:false, wantsBuy:false};
+        if(c.id===theirCard.id) return {...c, ownerId:activeUserId, wantsTrade:false, wantsBuy:false};
         if(c.id===myFigure.id) return {...c, ownerId:theirCard.ownerId, wantsTrade:false, wantsBuy:false};
         return c;
       });
@@ -3540,15 +3622,15 @@ function AppShell({ onSignOut, authUser }) {
   };
 
   // ── MESSAGING ──
-  const myThreads = (db.messages||[]).filter(th => th.participants.includes(CURRENT_USER_ID));
+  const myThreads = (db.messages||[]).filter(th => th.participants.includes(activeUserId));
   const unreadCount = myThreads.reduce((n, th) => {
     const last = th.messages[th.messages.length - 1];
-    return last && last.from !== CURRENT_USER_ID ? n + 1 : n;
+    return last && last.from !== activeUserId ? n + 1 : n;
   }, 0);
 
   const openThread = (otherUserId, card) => {
     const existing = (db.messages||[]).find(th =>
-      th.participants.includes(CURRENT_USER_ID) &&
+      th.participants.includes(activeUserId) &&
       th.participants.includes(otherUserId) &&
       th.cardId === card?.id
     );
@@ -3556,7 +3638,7 @@ function AppShell({ onSignOut, authUser }) {
     // Create new thread
     const newThread = {
       id: "th" + Date.now(),
-      participants: [CURRENT_USER_ID, otherUserId],
+      participants: [activeUserId, otherUserId],
       cardId: card?.id || null,
       cardName: card?.name || null,
       cardImage: card?.image || null,
@@ -3579,7 +3661,7 @@ function AppShell({ onSignOut, authUser }) {
 
   const sendMessage = async (threadId, text) => {
     if (!text.trim()) return;
-    const msg = { id:"m"+Date.now(), from:CURRENT_USER_ID, text:text.trim(), ts:new Date().toISOString().slice(0,16).replace("T"," ") };
+    const msg = { id:"m"+Date.now(), from:activeUserId, text:text.trim(), ts:new Date().toISOString().slice(0,16).replace("T"," ") };
     if (supabase) {
       const { error } = await insertChatMessage(threadId, msg);
       if (error) {
@@ -3593,7 +3675,7 @@ function AppShell({ onSignOut, authUser }) {
 
   const flagMessage = async (threadId, text, label) => {
     const thread = (db.messages||[]).find(th => th.id === threadId);
-    const nextFlags = [...(thread?.flags||[]), { text, label, by:CURRENT_USER_ID, ts:new Date().toISOString() }];
+    const nextFlags = [...(thread?.flags||[]), { text, label, by:activeUserId, ts:new Date().toISOString() }];
     const nextFlagCount = (thread?.flagCount||0) + 1;
     if (supabase) {
       const { error } = await updateConversationFlags(threadId, nextFlags, nextFlagCount);
@@ -3605,24 +3687,24 @@ function AppShell({ onSignOut, authUser }) {
     }
     setDb(d => ({
       ...d,
-      messages: (d.messages||[]).map(th => th.id===threadId ? {...th, flagCount:(th.flagCount||0)+1, flags:[...(th.flags||[]),{ text, label, by:CURRENT_USER_ID, ts:new Date().toISOString() }]} : th),
-      users: d.users.map(u => u.id===CURRENT_USER_ID ? {...u, flagCount:(u.flagCount||0)+1} : u),
+      messages: (d.messages||[]).map(th => th.id===threadId ? {...th, flagCount:(th.flagCount||0)+1, flags:[...(th.flags||[]),{ text, label, by:activeUserId, ts:new Date().toISOString() }]} : th),
+      users: d.users.map(u => u.id===activeUserId ? {...u, flagCount:(u.flagCount||0)+1} : u),
     }));
     notify(`🚫 Message blocked — ${label} not allowed`);
   };
 
   const handleSaveAddresses = (newAddresses) => {
-    setDb(d => ({ ...d, users: d.users.map(u => u.id === CURRENT_USER_ID ? {...u, addresses: newAddresses} : u) }));
+    setDb(d => ({ ...d, users: d.users.map(u => u.id === activeUserId ? {...u, addresses: newAddresses} : u) }));
     notify("📍 Addresses saved!");
   };
 
   const handleSaveProfile = ({ username, avatar, location, wishlist }) => {
-    setDb(d => ({ ...d, users: d.users.map(u => u.id === CURRENT_USER_ID ? {...u, username, avatar, location, wishlist} : u) }));
+    setDb(d => ({ ...d, users: d.users.map(u => u.id === activeUserId ? {...u, username, avatar, location, wishlist} : u) }));
     notify("✅ Profile updated!");
   };
 
   const handleSubmitDispute = async ({ txn, shipment, reason, detail }) => {
-    const dispute = { id:"d"+Date.now(), txnId:txn.id, raisedBy:CURRENT_USER_ID, againstUserId:txn.sellerId, shipmentId:shipment?.id||null, reason, detail, status:"open", resolution:null, adminNote:null, raisedAt:new Date().toISOString().split("T")[0], resolvedAt:null, figureValue:txn.amount, figureName:txn.cardName };
+    const dispute = { id:"d"+Date.now(), txnId:txn.id, raisedBy:activeUserId, againstUserId:txn.sellerId, shipmentId:shipment?.id||null, reason, detail, status:"open", resolution:null, adminNote:null, raisedAt:new Date().toISOString().split("T")[0], resolvedAt:null, figureValue:txn.amount, figureName:txn.cardName };
     if (supabase) {
       const { error: dErr } = await insertDispute(dispute);
       if (dErr) {
@@ -3657,7 +3739,7 @@ function AppShell({ onSignOut, authUser }) {
   };
 
   const handleSubmitRating = async ({ txn, toUserId, score, comment, type }) => {
-    const rating = { id:"r"+Date.now(), txnId:txn.id, fromUserId:CURRENT_USER_ID, toUserId, score, comment, type, date:new Date().toISOString().split("T")[0] };
+    const rating = { id:"r"+Date.now(), txnId:txn.id, fromUserId:activeUserId, toUserId, score, comment, type, date:new Date().toISOString().split("T")[0] };
     if (supabase) {
       const { error: rErr } = await insertRating(rating);
       if (rErr) {
@@ -3689,15 +3771,24 @@ function AppShell({ onSignOut, authUser }) {
 
   const handleTopup = () => {    const amt = parseFloat(topupAmount);
     if(!amt||amt<=0) return;
-    setDb(d=>({...d, users:d.users.map(u=>u.id===CURRENT_USER_ID?{...u,walletBalance:parseFloat((u.walletBalance+amt).toFixed(2))}:u)}));
+    setDb(d=>({...d, users:d.users.map(u=>u.id===activeUserId?{...u,walletBalance:parseFloat((u.walletBalance+amt).toFixed(2))}:u)}));
     notify(`✅ $${fmt(amt)} added to wallet`); setTopupAmount(""); setWalletAction(null);
   };
 
   const visibleSwipeData = swipeCards.slice(-4).map(id=>enriched.find(c=>c.id===id)).filter(Boolean).reverse();
 
+  const goToTab = (id) => {
+    setTab(id);
+    if (id !== "messages") setActiveThread(null);
+  };
+
+  useEffect(() => {
+    if (tab === "db" || tab === "emails") setTab("browse");
+  }, [tab]);
+
   const txnColor = t => t.type==="purchase"?"#ff6b6b":(t.type==="sale"||t.type==="topup")?"#00b894":"#3A7BD5";
-  const txnSign  = t => t.buyerId===CURRENT_USER_ID?"-":"+";
-  const txnAmt   = t => t.buyerId===CURRENT_USER_ID?t.amount:t.net;
+  const txnSign  = t => t.buyerId===activeUserId?"-":"+";
+  const txnAmt   = t => t.buyerId===activeUserId?t.amount:t.net;
 
   return (
     <div className="inhand-shell">
@@ -3707,8 +3798,7 @@ function AppShell({ onSignOut, authUser }) {
       `}</style>
 
       {toast && <div className="inhand-toast">{toast}</div>}
-      {showAddCard && <AddCardModal onSave={handleAddCard} onClose={()=>setShowAddCard(false)} />}
-      {showAddUser && <AddUserModal onSave={u=>{setDb(d=>({...d,users:[...d.users,u]}));notify(`✅ ${u.username} added!`);}} onClose={()=>setShowAddUser(false)} />}
+      {showAddCard && <AddCardModal ownerId={activeUserId} onSave={handleAddCard} onClose={()=>setShowAddCard(false)} />}
       {checkoutCard && <CheckoutModal card={checkoutCard} seller={getUser(checkoutCard.ownerId)} myUser={myUser} onConfirm={(opts)=>handlePurchaseConfirm(checkoutCard,opts)} onClose={()=>setCheckoutCard(null)} />}
       {sweetenerTrade && <TradeSweetenerModal myFigure={sweetenerTrade.myFigure} theirFigure={sweetenerTrade.theirCard} theirOwner={getUser(sweetenerTrade.theirCard.ownerId)} myUser={myUser} onConfirm={handleSweetenerConfirm} onClose={()=>setSweetenerTrade(null)} />}
       {marketModal && <MarketValueModal card={marketModal} onClose={()=>setMarketModal(null)} />}
@@ -3795,7 +3885,7 @@ function AppShell({ onSignOut, authUser }) {
                 <button onClick={()=>{simulateDelivery(s.id);setTrackingModal({...s,status:"delivered",events:[...s.events,{date:new Date().toISOString().slice(0,16).replace("T"," "),location:"Destination",description:"Delivered — Front Door"}]});}} style={{ width:"100%",background:"#EEF2F7",border:"none",borderRadius:12,padding:"10px",fontWeight:700,fontSize:12,color:"#888",cursor:"pointer",marginTop:12 }}>🎭 Simulate Delivery (demo)</button>
               )}
               {/* Report a Problem — buyer only, within 7d of delivery */}
-              {s.status==="delivered" && s.toUser===CURRENT_USER_ID && !s.fundsReleased && !s.disputeFrozen && (() => {
+              {s.status==="delivered" && s.toUser===activeUserId && !s.fundsReleased && !s.disputeFrozen && (() => {
                 const txn = db.transactions.find(t=>t.id===s.txnId);
                 return txn ? (
                   <button onClick={()=>setDisputeModal({ txn, shipment:s })} style={{ width:"100%",background:"#fff0f0",border:"2px solid #ff6b6b",borderRadius:12,padding:"11px",fontWeight:800,fontSize:13,color:"#ff6b6b",cursor:"pointer",marginTop:10,display:"flex",alignItems:"center",justifyContent:"center",gap:6 }}>
@@ -3825,6 +3915,21 @@ function AppShell({ onSignOut, authUser }) {
           onClose={() => setAddTrackingFor(null)} />;
       })()}
 
+      <aside className="inhand-sidebar" aria-label="Main navigation">
+        <div className="inhand-sidebar-brand">
+          <div className="inhand-brand-title">In Hand</div>
+          <div className="inhand-brand-subtitle">Collector marketplace</div>
+        </div>
+        <nav className="inhand-sidebar-nav">
+          {NAV_ITEMS.map(([id, label]) => (
+            <button key={id} type="button" data-active={tab === id ? "true" : "false"} onClick={() => goToTab(id)}>
+              {label}
+            </button>
+          ))}
+        </nav>
+      </aside>
+
+      <div className="inhand-app-body">
       <header className="inhand-header">
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
           <div className="inhand-brand-lockup">
@@ -3852,8 +3957,8 @@ function AppShell({ onSignOut, authUser }) {
           </div>
         </div>
         <div className="inhand-segmented">
-          {[["browse","Browse"],["trades","Trades"],["messages","Chat"],["vault","Vault"]].map(([id, label]) => (
-            <button key={id} type="button" data-active={tab === id ? "true" : "false"} onClick={() => { setTab(id); if (id !== "messages") setActiveThread(null); }}>
+          {NAV_ITEMS.map(([id, label]) => (
+            <button key={id} type="button" data-active={tab === id ? "true" : "false"} onClick={() => goToTab(id)}>
               {label}
             </button>
           ))}
@@ -3990,7 +4095,7 @@ function AppShell({ onSignOut, authUser }) {
           threads={myThreads}
           activeThreadId={activeThread}
           setActiveThread={setActiveThread}
-          currentUserId={CURRENT_USER_ID}
+          currentUserId={activeUserId}
           getUser={getUser}
           onSend={sendMessage}
           onFlag={flagMessage}
@@ -4019,10 +4124,10 @@ function AppShell({ onSignOut, authUser }) {
 
           {/* Active shipments */}
           {(() => {
-            const myShipments = (db.shipments||[]).filter(s=>s.fromUser===CURRENT_USER_ID||s.toUser===CURRENT_USER_ID);
+            const myShipments = (db.shipments||[]).filter(s=>s.fromUser===activeUserId||s.toUser===activeUserId);
             if(myShipments.length===0) return <div style={{ textAlign:"center",padding:"40px 0",color:"#ccc" }}><div style={{ fontSize:48,marginBottom:12 }}>📭</div><div style={{ fontWeight:700,fontSize:15 }}>No shipments yet</div></div>;
             return myShipments.map(s=>{
-              const isSeller = s.fromUser===CURRENT_USER_ID;
+              const isSeller = s.fromUser===activeUserId;
               const statusColor = s.status==="delivered"?"#00b894":s.status==="in_transit"||s.status==="accepted"?"#3A7BD5":s.status==="out_for_delivery"?"#f9ca24":"#aaa";
               const statusLabel = s.status==="delivered"?"Delivered":s.status==="in_transit"?"In Transit":s.status==="accepted"?"Accepted":s.status==="out_for_delivery"?"Out for Delivery":"Label Pending";
               const stepIdx = trackingStepIndex(s.status);
@@ -4134,7 +4239,7 @@ function AppShell({ onSignOut, authUser }) {
               <input value={topupAmount} onChange={e=>setTopupAmount(e.target.value)} placeholder={`Max $${fmt(myUser?.walletBalance||0)}`} type="number" style={{...IS,marginBottom:10}} />
               <div style={{ display:"flex",gap:8 }}>
                 <button onClick={()=>setWalletAction(null)} style={{ flex:1,background:"#EEF2F7",border:"none",borderRadius:10,padding:"10px",fontWeight:700,fontSize:13,color:"#555",cursor:"pointer" }}>Cancel</button>
-                <button onClick={()=>{ const amt=parseFloat(topupAmount); if(!amt||amt>myUser.walletBalance) return; setDb(d=>({...d,users:d.users.map(u=>u.id===CURRENT_USER_ID?{...u,walletBalance:parseFloat((u.walletBalance-amt).toFixed(2))}:u)})); notify(`✅ $${fmt(amt)} withdrawn`); setTopupAmount(""); setWalletAction(null); }} style={{ flex:2,background:"#2C3E50",border:"none",borderRadius:10,padding:"10px",fontWeight:800,fontSize:13,color:"#fff",cursor:"pointer" }}>Withdraw ${topupAmount||"0"}</button>
+                <button onClick={()=>{ const amt=parseFloat(topupAmount); if(!amt||amt>myUser.walletBalance) return; setDb(d=>({...d,users:d.users.map(u=>u.id===activeUserId?{...u,walletBalance:parseFloat((u.walletBalance-amt).toFixed(2))}:u)})); notify(`✅ $${fmt(amt)} withdrawn`); setTopupAmount(""); setWalletAction(null); }} style={{ flex:2,background:"#2C3E50",border:"none",borderRadius:10,padding:"10px",fontWeight:800,fontSize:13,color:"#fff",cursor:"pointer" }}>Withdraw ${topupAmount||"0"}</button>
               </div>
             </div>
           )}
@@ -4159,12 +4264,12 @@ function AppShell({ onSignOut, authUser }) {
           <div style={{ fontWeight:800,fontSize:15,color:"#2C3E50",marginBottom:12 }}>Transaction History</div>
           {myTxns.length===0 ? <div style={{ textAlign:"center",padding:"30px 0",color:"#ccc",fontSize:13 }}>No transactions yet</div>
             : myTxns.map(txn => {
-              const isBuyer = txn.buyerId===CURRENT_USER_ID;
+              const isBuyer = txn.buyerId===activeUserId;
               const col = isBuyer?"#ff6b6b":"#00b894";
               const statusColor = txn.status==="completed"?"#00b894":txn.status==="in_escrow"?"#3A7BD5":txn.status==="disputed"?"#ff6b6b":"#f9ca24";
               const otherUserId = isBuyer ? txn.sellerId : txn.buyerId;
               const otherUser = getUser(otherUserId);
-              const alreadyRated = (db.ratings||[]).some(r=>r.txnId===txn.id&&r.fromUserId===CURRENT_USER_ID);
+              const alreadyRated = (db.ratings||[]).some(r=>r.txnId===txn.id&&r.fromUserId===activeUserId);
               const shipment = (db.shipments||[]).find(s=>s.txnId===txn.id);
               const canDispute = isBuyer && txn.status==="in_escrow" && shipment?.status==="delivered" && !shipment?.disputeFrozen;
               return (
@@ -4457,7 +4562,6 @@ function AppShell({ onSignOut, authUser }) {
           </div>
           {adminView==="users" && (
             <div>
-              <div style={{ display:"flex",justifyContent:"flex-end",marginBottom:12 }}><button onClick={()=>setShowAddUser(true)} style={{ background:"#2C3E50",border:"none",borderRadius:10,padding:"7px 14px",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer" }}>+ Add User</button></div>
               {db.users.map(user=>{ const uc=db.cards.filter(c=>c.ownerId===user.id); return (
                 <div key={user.id} style={{ background:"#fff",borderRadius:16,padding:"14px",boxShadow:"0 2px 10px rgba(0,0,0,0.05)",border:"1px solid #E4EBF2",marginBottom:10 }}>
                   <div style={{ display:"flex",alignItems:"center",gap:12 }}>
@@ -4473,7 +4577,7 @@ function AppShell({ onSignOut, authUser }) {
                         {user.flagCount>0 && <span style={{ fontSize:10,background:"#fff0f0",color:"#ff6b6b",borderRadius:6,padding:"1px 7px",fontWeight:700 }}>🚫 {user.flagCount} flags</span>}
                       </div>
                     </div>
-                    {user.id!==CURRENT_USER_ID&&<button onClick={()=>setDb(d=>({users:d.users.filter(u=>u.id!==user.id),cards:d.cards.filter(c=>c.ownerId!==user.id),transactions:d.transactions.filter(t=>t.buyerId!==user.id&&t.sellerId!==user.id)}))} style={{ background:"#fff0f0",border:"none",borderRadius:8,padding:"5px 10px",fontSize:11,color:"#ff6b6b",cursor:"pointer",fontWeight:700 }}>del</button>}
+                    {user.id!==activeUserId&&<button onClick={()=>setDb(d=>({users:d.users.filter(u=>u.id!==user.id),cards:d.cards.filter(c=>c.ownerId!==user.id),transactions:d.transactions.filter(t=>t.buyerId!==user.id&&t.sellerId!==user.id)}))} style={{ background:"#fff0f0",border:"none",borderRadius:8,padding:"5px 10px",fontSize:11,color:"#ff6b6b",cursor:"pointer",fontWeight:700 }}>del</button>}
                   </div>
                 </div>
               );})}
@@ -4718,8 +4822,8 @@ function AppShell({ onSignOut, authUser }) {
             {[
               { icon:"🗃️", label:"My Vault", sub:`${myCards.length} figures · $${myCards.reduce((s,f)=>s+f.value,0).toLocaleString()} total value`, tab:"vault", color:"#3A7BD5" },
               { icon:"💰", label:"Wallet & Payments", sub:`Balance: $${fmt(myUser?.walletBalance||0)} · ${myUser?.paymentMethods?.length||0} payment methods`, tab:"wallet", color:"#00b894" },
-              { icon:"📦", label:"Shipping & Tracking", sub:`${(db.shipments||[]).filter(s=>s.fromUser===CURRENT_USER_ID||s.toUser===CURRENT_USER_ID).length} shipments`, tab:"shipping", color:"#f0932b" },
-              { icon:"⭐", label:"My Ratings", sub:`${(db.ratings||[]).filter(r=>r.toUserId===CURRENT_USER_ID).length} reviews · avg ⭐${myUser?.rating}`, tab:"wallet", color:"#f9ca24" },
+              { icon:"📦", label:"Shipping & Tracking", sub:`${(db.shipments||[]).filter(s=>s.fromUser===activeUserId||s.toUser===activeUserId).length} shipments`, tab:"shipping", color:"#f0932b" },
+              { icon:"", label:"My Ratings", sub:`${(db.ratings||[]).filter(r=>r.toUserId===activeUserId).length} reviews · avg ${myUser?.rating}`, tab:"account", color:"#f9ca24" },
             ].map(item => (
               <div key={item.tab} onClick={()=>setTab(item.tab)} style={{ background:"#fff",borderRadius:18,padding:"14px 16px",boxShadow:"0 2px 10px rgba(0,0,0,0.05)",border:"1px solid #E4EBF2",display:"flex",alignItems:"center",gap:14,cursor:"pointer",transition:"transform 0.15s" }}
                 onMouseDown={e=>e.currentTarget.style.transform="scale(0.98)"}
@@ -4763,11 +4867,11 @@ function AppShell({ onSignOut, authUser }) {
           </div>
 
           {/* Received Ratings */}
-          {(db.ratings||[]).filter(r=>r.toUserId===CURRENT_USER_ID).length > 0 && (
+          {(db.ratings||[]).filter(r=>r.toUserId===activeUserId).length > 0 && (
             <>
               <div style={{ fontWeight:700,fontSize:12,color:"#bbb",letterSpacing:1,marginBottom:10 }}>YOUR RATINGS</div>
               <div style={{ background:"#fff",borderRadius:18,overflow:"hidden",boxShadow:"0 2px 10px rgba(0,0,0,0.05)",border:"1px solid #E4EBF2",marginBottom:20 }}>
-                {(db.ratings||[]).filter(r=>r.toUserId===CURRENT_USER_ID).map((r,i,arr)=>{
+                {(db.ratings||[]).filter(r=>r.toUserId===activeUserId).map((r,i,arr)=>{
                   const from = getUser(r.fromUserId);
                   return (
                     <div key={r.id} style={{ padding:"14px 16px",borderBottom:i<arr.length-1?"1px solid #EEF2F7":"none" }}>
@@ -4787,25 +4891,6 @@ function AppShell({ onSignOut, authUser }) {
             </>
           )}
 
-          {/* Admin / DB */}
-          <div style={{ fontWeight:700,fontSize:12,color:"#bbb",letterSpacing:1,marginBottom:10 }}>ADMIN</div>
-          <div onClick={()=>setTab("db")} style={{ background:"#fff",borderRadius:18,padding:"14px 16px",boxShadow:"0 2px 10px rgba(0,0,0,0.05)",border:"1px solid #E4EBF2",display:"flex",alignItems:"center",gap:14,cursor:"pointer",marginBottom:10 }}>
-            <div style={{ width:44,height:44,borderRadius:14,background:"#EEF2F7",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0 }}>🗄️</div>
-            <div style={{ flex:1 }}>
-              <div style={{ fontWeight:800,fontSize:14,color:"#2C3E50" }}>Database</div>
-              <div style={{ fontSize:11,color:"#aaa",marginTop:2 }}>{db.users.length} users · {db.cards.length} figures · {db.transactions.length} transactions</div>
-            </div>
-            <div style={{ fontSize:16,color:"#ddd" }}>›</div>
-          </div>
-          <div onClick={()=>setTab("emails")} style={{ background:"#fff",borderRadius:18,padding:"14px 16px",boxShadow:"0 2px 10px rgba(0,0,0,0.05)",border:"1px solid #E4EBF2",display:"flex",alignItems:"center",gap:14,cursor:"pointer",marginBottom:10 }}>
-            <div style={{ width:44,height:44,borderRadius:14,background:"#fff0f8",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0 }}>📧</div>
-            <div style={{ flex:1 }}>
-              <div style={{ fontWeight:800,fontSize:14,color:"#2C3E50" }}>Email Templates</div>
-              <div style={{ fontSize:11,color:"#aaa",marginTop:2 }}>{EMAIL_TEMPLATES.length} templates · dev reference for Resend</div>
-            </div>
-            <div style={{ fontSize:16,color:"#ddd" }}>›</div>
-          </div>
-
           {/* Sign out */}
           <button onClick={onSignOut} style={{ width:"100%",background:"#fff0f0",border:"none",borderRadius:14,padding:"13px",fontWeight:700,fontSize:13,color:"#ff6b6b",cursor:"pointer",marginTop:4 }}>
             Sign Out
@@ -4814,13 +4899,14 @@ function AppShell({ onSignOut, authUser }) {
       )}
 
       <nav className="inhand-bottom-nav" aria-label="Primary">
-        {[["wallet","Wallet"],["messages","Chat"],["shipping","Ship"],["account","Account"]].map(([id, label]) => (
-          <button key={id} type="button" data-active={tab === id ? "true" : "false"} onClick={() => { setTab(id); if (id !== "messages") setActiveThread(null); }}>
+        {NAV_ITEMS.map(([id, label]) => (
+          <button key={id} type="button" data-active={tab === id ? "true" : "false"} onClick={() => goToTab(id)}>
             <span aria-hidden="true" />
             <span>{label}</span>
           </button>
         ))}
       </nav>
+      </div>
     </div>
   );
 }
