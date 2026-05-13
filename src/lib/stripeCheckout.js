@@ -1,4 +1,5 @@
 import { loadStripe } from "@stripe/stripe-js";
+import { supabase } from "./supabaseClient";
 
 let stripePromise;
 
@@ -14,6 +15,9 @@ function getStripe() {
  * `create-checkout-session` (validates listing + totals server-side).
  */
 export async function startStripeCheckout(payload) {
+  if (!supabase) {
+    throw new Error("Supabase is not configured.");
+  }
   const stripeLoader = getStripe();
   if (!stripeLoader) {
     throw new Error(
@@ -29,6 +33,12 @@ export async function startStripeCheckout(payload) {
     );
   }
 
+  const { data: sessWrap } = await supabase.auth.getSession();
+  const accessToken = sessWrap?.session?.access_token;
+  if (!accessToken) {
+    throw new Error("Sign in required to start checkout.");
+  }
+
   const url =
     (process.env.REACT_APP_STRIPE_CHECKOUT_URL || "").trim() ||
     `${supabaseUrl}/functions/v1/create-checkout-session`;
@@ -37,7 +47,7 @@ export async function startStripeCheckout(payload) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${anon}`,
+      Authorization: `Bearer ${accessToken}`,
       apikey: anon,
     },
     body: JSON.stringify(payload),

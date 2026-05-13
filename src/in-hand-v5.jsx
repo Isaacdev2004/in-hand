@@ -5,7 +5,7 @@ import {
   createListing,
   updateListing,
   deleteListing,
-  transferListingOwnership,
+  swapTradeListings,
 } from "./lib/listingsApi";
 import {
   upsertTransaction,
@@ -18,6 +18,10 @@ import {
   updateConversationFlags,
   insertDispute,
   insertRating,
+  tryReleaseEscrow,
+  insertNotification,
+  markNotificationRead,
+  markAllNotificationsRead,
 } from "./lib/marketplaceApi";
 import { startStripeCheckout } from "./lib/stripeCheckout";
 import { ensureUserProfile } from "./lib/authSession";
@@ -3150,6 +3154,18 @@ export default function InHand() {
   const [onboardingDone, setOnboardingDone] = useState(false);
   const [authUser, setAuthUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(!!supabase);
+  const [recoveryOpen, setRecoveryOpen] = useState(false);
+  const [recoveryPw, setRecoveryPw] = useState({ a: "", b: "" });
+  const [recoveryErr, setRecoveryErr] = useState("");
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !supabase) return undefined;
+    const sync = () => setRecoveryOpen(window.location.hash.includes("type=recovery"));
+    sync();
+    window.addEventListener("hashchange", sync);
+    return () => window.removeEventListener("hashchange", sync);
+  }, []);
 
   useEffect(() => {
     async function init() {
@@ -3205,6 +3221,31 @@ export default function InHand() {
     }
   };
 
+  const submitRecoveryPassword = async () => {
+    if (!supabase) return;
+    setRecoveryErr("");
+    if ((recoveryPw.a || "").length < 8) {
+      setRecoveryErr("Password must be at least 8 characters.");
+      return;
+    }
+    if (recoveryPw.a !== recoveryPw.b) {
+      setRecoveryErr("Passwords do not match.");
+      return;
+    }
+    setRecoveryBusy(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: recoveryPw.a });
+      if (error) throw error;
+      window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+      setRecoveryOpen(false);
+      setRecoveryPw({ a: "", b: "" });
+    } catch (e) {
+      setRecoveryErr(e?.message || "Could not update password.");
+    } finally {
+      setRecoveryBusy(false);
+    }
+  };
+
   if (!onboardingDone) return <OnboardingScreen onComplete={completeOnboarding} />;
   if (authLoading) return <div className="inhand-loading">Loading your account...</div>;
   if (!supabase) {
@@ -3213,6 +3254,22 @@ export default function InHand() {
         <div>
           <h1>Configuration required</h1>
           <p>Add your Supabase URL and anon key in the deployment environment before using In Hand.</p>
+        </div>
+      </div>
+    );
+  }
+  if (recoveryOpen) {
+    return (
+      <div style={{ minHeight: "100vh", background: "#EEF2F7", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, fontFamily: "'Poppins',sans-serif" }}>
+        <div style={{ background: "#fff", borderRadius: 20, padding: 28, maxWidth: 400, width: "100%", boxShadow: "0 8px 40px rgba(0,0,0,0.08)" }}>
+          <div style={{ fontWeight: 800, fontSize: 20, color: "#2C3E50", marginBottom: 8 }}>Set new password</div>
+          <div style={{ fontSize: 13, color: "#aaa", marginBottom: 20 }}>You opened a password recovery link. Choose a new password, then sign in as usual.</div>
+          <input type="password" placeholder="New password" value={recoveryPw.a} onChange={(e) => setRecoveryPw((p) => ({ ...p, a: e.target.value }))} style={{ ...IS_AUTH, marginBottom: 10 }} />
+          <input type="password" placeholder="Confirm password" value={recoveryPw.b} onChange={(e) => setRecoveryPw((p) => ({ ...p, b: e.target.value }))} style={{ ...IS_AUTH, marginBottom: 12 }} />
+          {recoveryErr && <div style={{ color: "#ff6b6b", fontSize: 12, fontWeight: 600, marginBottom: 12 }}>{recoveryErr}</div>}
+          <button type="button" disabled={recoveryBusy} onClick={submitRecoveryPassword} style={{ width: "100%", background: "#2C3E50", border: "none", borderRadius: 14, padding: "14px", color: "#fff", fontWeight: 800, fontSize: 15, cursor: "pointer" }}>
+            {recoveryBusy ? "Saving…" : "Update password"}
+          </button>
         </div>
       </div>
     );
@@ -3263,17 +3320,72 @@ function AppShell({ onSignOut, authUser }) {
   const myNotifications = (db.notifications||[]);
   const unreadNotifCount = myNotifications.filter(n=>!n.read).length;
 
-  const markAllRead = () => setDb(d=>({...d, notifications:d.notifications.map(n=>({...n,read:true}))}));
-  const markRead = (id) => setDb(d=>({...d, notifications:d.notifications.map(n=>n.id===id?{...n,read:true}:n)}));
-
-  // Wishlist match check — fires when new cards are added
-  const checkWishlistMatch = (newCard) => {
-    const hits = myUser?.wishlist?.filter(tag => newCard.tags?.includes(tag) || newCard.line===tag);
-    if (hits?.length && newCard.ownerId !== activeUserId) {
-      const notif = { id:"n"+Date.now(), type:"wishlist_match", read:false, ts:new Date().toISOString().slice(0,16).replace("T"," "), title:"Wishlist match! 🔥", body:`${newCard.name} just listed — matches your wishlist`, cardId:newCard.id, link:"browse" };
-      setDb(d=>({...d, notifications:[notif,...(d.notifications||[])]}));
+  const markAllRead = async () => {
+    if (supabase) {
+      const { error } = await markAllNotificationsRead(activeUserId);
+      if (error) console.error("In Hand: mark all notifications failed", error);
     }
-  }; // card to share
+    setDb((d) => ({ ...d, notifications: d.notifications.map((n) => ({ ...n, read: true })) }));
+  };
+  const markRead = async (id) => {
+    if (supabase) {
+      const { error } = await markNotificationRead(id);
+      if (error) console.error("In Hand: mark notification read failed", error);
+    }
+    setDb((d) => ({
+      ...d,
+      notifications: d.notifications.map((n) => (n.id === id ? { ...n, read: true } : n)),
+    }));
+  };
+
+  // Wishlist match — persist for other collectors (Supabase); local row if recipient is you
+  const checkWishlistMatch = async (newCard) => {
+    if (!supabase) return;
+    for (const u of db.users) {
+      if (u.id === newCard.ownerId) continue;
+      const hits = (u.wishlist || []).filter(
+        (tag) => newCard.tags?.includes(tag) || newCard.line === tag
+      );
+      if (!hits.length) continue;
+      const nid = `n${Date.now()}_${u.id.replace(/[^a-zA-Z0-9]/g, "").slice(0, 12)}`;
+      const ts = new Date().toISOString().slice(0, 16).replace("T", " ");
+      const row = {
+        id: nid,
+        recipientId: u.id,
+        type: "wishlist_match",
+        read: false,
+        title: "Wishlist match! 🔥",
+        body: `${newCard.name} just listed — matches your wishlist`,
+        cardId: newCard.id,
+        link: "browse",
+        relatedUserId: newCard.ownerId,
+      };
+      const { error } = await insertNotification(row);
+      if (error) {
+        console.error("In Hand: wishlist notification insert failed", error);
+        continue;
+      }
+      if (u.id === activeUserId) {
+        setDb((d) => ({
+          ...d,
+          notifications: [
+            {
+              id: nid,
+              type: "wishlist_match",
+              read: false,
+              ts,
+              title: row.title,
+              body: row.body,
+              cardId: newCard.id,
+              link: "browse",
+              userId: newCard.ownerId,
+            },
+            ...(d.notifications || []),
+          ],
+        }));
+      }
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -3502,16 +3614,10 @@ function AppShell({ onSignOut, authUser }) {
     const txn = db.transactions.find(t=>t.id===shipment.txnId);
     if(!txn) return;
     if (supabase) {
-      const { error: txnErr } = await updateTransaction(txn.id, { status: "completed" });
-      if (txnErr) {
-        console.error("In Hand: transaction completion update failed", txnErr);
-        notify("❌ Could not release funds in Supabase");
-        return;
-      }
-      const { error: shipErr } = await updateShipmentById(shipment.id, { fundsReleased: true });
-      if (shipErr) {
-        console.error("In Hand: shipment release update failed", shipErr);
-        notify("❌ Could not release funds in Supabase");
+      const { data, error } = await tryReleaseEscrow(shipment.id, false);
+      if (error || !data?.ok) {
+        console.error("In Hand: escrow release RPC failed", error || data);
+        notify(data?.error ? `❌ ${data.error}` : "❌ Could not release funds in Supabase");
         return;
       }
     }
@@ -3588,16 +3694,10 @@ function AppShell({ onSignOut, authUser }) {
 
       if (supabase) {
         for (const s of toRelease) {
-          const txn = d.transactions.find((t) => t.id === s.txnId);
-          if (txn) {
-            const { error: tErr } = await updateTransaction(txn.id, { status: "completed" });
-            if (tErr) console.error("In Hand: auto-release transaction update failed", tErr);
+          const { data, error } = await tryReleaseEscrow(s.id, true);
+          if (error || !data?.ok) {
+            console.error("In Hand: auto-release RPC failed", s.id, error || data);
           }
-          const { error: sErr } = await updateShipmentById(s.id, {
-            fundsReleased: true,
-            autoReleased: true,
-          });
-          if (sErr) console.error("In Hand: auto-release shipment update failed", sErr);
         }
       }
 
@@ -3663,13 +3763,10 @@ function AppShell({ onSignOut, authUser }) {
           return;
         }
       }
-      const { error } = await transferListingOwnership([
-        { id: theirCard.id, ownerId: activeUserId, wantsTrade: false, wantsBuy: false },
-        { id: myFigure.id, ownerId: theirCard.ownerId, wantsTrade: false, wantsBuy: false },
-      ]);
+      const { error } = await swapTradeListings(theirCard.id, myFigure.id);
       if (error) {
         console.error("In Hand: trade ownership transfer failed", error);
-        notify("❌ Trade failed: could not update listings in Supabase");
+        notify("❌ Trade failed: could not swap figures in Supabase");
         return;
       }
       let nextSelfWallet = null;
@@ -4736,7 +4833,7 @@ function AppShell({ onSignOut, authUser }) {
                         {user.flagCount>0 && <span style={{ fontSize:10,background:"#fff0f0",color:"#ff6b6b",borderRadius:6,padding:"1px 7px",fontWeight:700 }}>🚫 {user.flagCount} flags</span>}
                       </div>
                     </div>
-                    {user.id!==activeUserId&&<button onClick={()=>setDb(d=>({users:d.users.filter(u=>u.id!==user.id),cards:d.cards.filter(c=>c.ownerId!==user.id),transactions:d.transactions.filter(t=>t.buyerId!==user.id&&t.sellerId!==user.id)}))} style={{ background:"#fff0f0",border:"none",borderRadius:8,padding:"5px 10px",fontSize:11,color:"#ff6b6b",cursor:"pointer",fontWeight:700 }}>del</button>}
+                    {user.id!==activeUserId&&!supabase&&<button onClick={()=>setDb(d=>({users:d.users.filter(u=>u.id!==user.id),cards:d.cards.filter(c=>c.ownerId!==user.id),transactions:d.transactions.filter(t=>t.buyerId!==user.id&&t.sellerId!==user.id)}))} style={{ background:"#fff0f0",border:"none",borderRadius:8,padding:"5px 10px",fontSize:11,color:"#ff6b6b",cursor:"pointer",fontWeight:700 }}>del</button>}
                   </div>
                 </div>
               );})}

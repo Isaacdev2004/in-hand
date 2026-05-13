@@ -24,7 +24,31 @@ Deno.serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const supabase = createClient(supabaseUrl, serviceKey);
+
+    const authHeader = req.headers.get("Authorization") ?? "";
+    const bearer = authHeader.replace(/^Bearer\s+/i, "").trim();
+    if (!bearer || bearer === anonKey) {
+      return new Response(
+        JSON.stringify({ error: "Sign in required. Pass Authorization: Bearer <user access token>." }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    const userClient = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: `Bearer ${bearer}` } },
+    });
+    const {
+      data: { user },
+      error: userErr,
+    } = await userClient.auth.getUser();
+    if (userErr || !user?.id) {
+      return new Response(JSON.stringify({ error: "Invalid or expired session" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     const { listingId, buyerId, successUrl, cancelUrl } = await req.json();
 
@@ -33,6 +57,13 @@ Deno.serve(async (req) => {
         JSON.stringify({ error: "listingId, buyerId, successUrl, cancelUrl required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
+    }
+
+    if (user.id !== buyerId) {
+      return new Response(JSON.stringify({ error: "buyerId must match signed-in user" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     const { data: listing, error: listErr } = await supabase

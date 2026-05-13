@@ -48,6 +48,18 @@ Deno.serve(async (req) => {
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const supabase = createClient(supabaseUrl, serviceKey);
 
+  const { data: seenEvent } = await supabase
+    .from("stripe_events")
+    .select("id")
+    .eq("id", event.id)
+    .maybeSingle();
+
+  if (seenEvent) {
+    return new Response(JSON.stringify({ received: true, duplicate_event: true }), {
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
   const txnId = `t_${session.id}`;
   const shipmentId = `sh_${session.id}`;
   const today = new Date().toISOString().split("T")[0];
@@ -59,6 +71,7 @@ Deno.serve(async (req) => {
     .maybeSingle();
 
   if (existing) {
+    await supabase.from("stripe_events").insert({ id: event.id });
     return new Response(JSON.stringify({ received: true, idempotent: true }), {
       headers: { "Content-Type": "application/json" },
     });
@@ -122,6 +135,11 @@ Deno.serve(async (req) => {
 
   if (delErr) {
     console.error("listing delete", delErr);
+  }
+
+  const { error: evErr } = await supabase.from("stripe_events").insert({ id: event.id });
+  if (evErr && (evErr as { code?: string }).code !== "23505") {
+    console.error("stripe_events insert", evErr);
   }
 
   return new Response(JSON.stringify({ received: true }), {

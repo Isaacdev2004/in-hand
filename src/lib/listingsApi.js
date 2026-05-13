@@ -60,3 +60,12 @@ export async function transferListingOwnership(transfers) {
   }
   return { data: true, error: null };
 }
+
+/** Two-party figure swap (bypasses listing owner-only UPDATE RLS). */
+export async function swapTradeListings(takeId, giveId) {
+  if (!supabase) return { data: null, error: null, skipped: true };
+  return supabase.rpc("swap_trade_listings", {
+    p_take_id: takeId,
+    p_give_id: giveId,
+  });
+}

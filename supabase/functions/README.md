@@ -14,9 +14,14 @@ Set:
 ```bash
 supabase login
 supabase link --project-ref YOUR_PROJECT_REF
+supabase db push
 supabase functions deploy create-checkout-session
 supabase functions deploy stripe-webhook
 ```
+
+`create-checkout-session` expects **`Authorization: Bearer <user access token>`** (the signed-in buyer’s JWT from `supabase.auth.getSession()`), not the anon key. The Edge function verifies `buyerId` matches that user. The app’s `startStripeCheckout` sends the session access token automatically.
+
+`SUPABASE_ANON_KEY` is available to Edge Functions by default (used to validate the JWT).
 
 ## Stripe webhook URL
 

@@ -166,3 +166,44 @@ export async function insertRating(rating) {
   if (!supabase) return { data: null, error: null, skipped: true };
   return supabase.from("ratings").insert(ratingToRow(rating));
 }
+
+/** Escrow release: credits seller wallet + completes txn (SECURITY DEFINER RPC). */
+export async function tryReleaseEscrow(shipmentId, autoAfterDelay) {
+  if (!supabase) return { data: null, error: null, skipped: true };
+  return supabase.rpc("try_release_escrow", {
+    p_shipment_id: shipmentId,
+    p_auto_after_delay: autoAfterDelay,
+  });
+}
+
+export async function insertNotification(n) {
+  if (!supabase) return { data: null, error: null, skipped: true };
+  return supabase.from("notifications").insert({
+    id: n.id,
+    recipient_id: n.recipientId,
+    type: n.type,
+    is_read: !!n.read,
+    title: n.title ?? null,
+    body: n.body ?? null,
+    card_id: n.cardId ?? null,
+    link: n.link ?? null,
+    related_user_id: n.relatedUserId ?? n.userId ?? null,
+  });
+}
+
+export async function markNotificationRead(notificationId) {
+  if (!supabase) return { data: null, error: null, skipped: true };
+  return supabase
+    .from("notifications")
+    .update({ is_read: true })
+    .eq("id", notificationId);
+}
+
+export async function markAllNotificationsRead(recipientId) {
+  if (!supabase) return { data: null, error: null, skipped: true };
+  return supabase
+    .from("notifications")
+    .update({ is_read: true })
+    .eq("recipient_id", recipientId)
+    .eq("is_read", false);
+}
