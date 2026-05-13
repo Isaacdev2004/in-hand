@@ -21,6 +21,7 @@ import {
 } from "./lib/marketplaceApi";
 import { startStripeCheckout } from "./lib/stripeCheckout";
 import { ensureUserProfile, loadSessionProfile } from "./lib/authSession";
+import { updateOwnUser } from "./lib/usersApi";
 import {
   BellIcon,
   figureInitials,
@@ -3224,6 +3225,10 @@ export default function InHand() {
 function AppShell({ onSignOut, authUser }) {
   const activeUserId = authUser?.id || DEFAULT_USER_ID;
   const [db, setDb] = useState(() => (supabase ? EMPTY_DB : { users:SEED_USERS, cards:SEED_CARDS, transactions:SEED_TRANSACTIONS, shipments:SEED_SHIPMENTS, disputes:SEED_DISPUTES, ratings:SEED_RATINGS, messages:SEED_MESSAGES, notifications:SEED_NOTIFICATIONS }));
+  const dbRef = useRef(db);
+  useEffect(() => {
+    dbRef.current = db;
+  }, [db]);
   const [dbLoaded, setDbLoaded] = useState(false);
   const [tab, setTab] = useState("browse");
   const [viewMode, setViewMode] = useState("list");
@@ -3356,6 +3361,28 @@ function AppShell({ onSignOut, authUser }) {
   useEffect(() => { if(myTradeable.length&&!selectedOffer) setSelectedOffer(myTradeable[0]); }, [myTradeable.length]);
   const notify = msg => { setToast(stripToastEmoji(msg)); setTimeout(()=>setToast(null),2500); };
 
+  const reloadFromSupabase = async () => {
+    if (!supabase) return;
+    try {
+      const userId = authUser?.id || activeUserId;
+      const fromCloud = await fetchAppDatabaseShape(supabase, userId);
+      setDb({
+        users: fromCloud.users || [],
+        cards: fromCloud.cards || [],
+        transactions: fromCloud.transactions || [],
+        shipments: fromCloud.shipments || [],
+        disputes: fromCloud.disputes || [],
+        ratings: fromCloud.ratings || [],
+        messages: fromCloud.messages || [],
+        notifications: fromCloud.notifications || [],
+      });
+      notify("🔄 Reloaded from Supabase");
+    } catch (e) {
+      console.error("In Hand: Supabase reload failed", e);
+      notify("❌ Could not reload from Supabase");
+    }
+  };
+
   const enriched = otherCards.map(c=>({ ...c, owner:getUser(c.ownerId), matchScore:computeMatch(myCards,c,myUser?.wishlist||[]) }));
   const filtered = enriched.filter(c=>{
     const q=search.toLowerCase();
@@ -3430,6 +3457,10 @@ function AppShell({ onSignOut, authUser }) {
     const grandTotal = parseFloat((total + shipping).toFixed(2));
     const txn = { id:"t"+Date.now(), type:"purchase", buyerId:activeUserId, sellerId:card.ownerId, cardId:card.id, amount:card.value, fee, shipping, net:card.value-fee, status:"in_escrow", method:payMethod, date:new Date().toISOString().split("T")[0], cardName:card.name };
     const shipment = { id:"sh"+Date.now(), txnId:txn.id, trackingNumber:"", carrier:"USPS Ground", status:"label_pending", estimatedDelivery:"", shippingCost:shipping, shippingLabel:shippingRate.label, fromUser:card.ownerId, toUser:activeUserId, figureName:card.name, figureValue:card.value, fundsReleased:false, events:[] };
+    const nextBuyerWallet =
+      payMethod === "wallet" && myUser
+        ? parseFloat((myUser.walletBalance - grandTotal).toFixed(2))
+        : null;
     if (supabase) {
       const { error: txnErr } = await upsertTransaction(txn);
       if (txnErr) {
@@ -3448,6 +3479,13 @@ function AppShell({ onSignOut, authUser }) {
         console.error("In Hand: listing removal on purchase failed", listingErr);
         notify("❌ Purchase not completed: listing update failed");
         return;
+      }
+      if (payMethod === "wallet" && nextBuyerWallet != null) {
+        const { error: wErr } = await updateOwnUser(activeUserId, { walletBalance: nextBuyerWallet });
+        if (wErr) {
+          console.error("In Hand: buyer wallet update failed", wErr);
+          notify("⚠️ Purchase saved; wallet balance may be out of sync — refresh");
+        }
       }
     }
     setDb(d => {
@@ -3535,40 +3573,73 @@ function AppShell({ onSignOut, authUser }) {
     notify("📬 Package delivered! Funds auto-release in 7 days.");
   };
 
-  // ── AUTO-RELEASE: check every 60s, release funds 7d after delivery ──
+  // ── AUTO-RELEASE: 7d after delivery, credit seller in UI + persist txn/shipment to Supabase ──
   useEffect(() => {
     if (!dbLoaded) return;
-    const check = () => {
+
+    const runAutoRelease = async () => {
+      const d = dbRef.current;
       const now = Date.now();
-      setDb(d => {
+      const toRelease = (d.shipments || []).filter((s) => {
+        if (s.status !== "delivered" || s.fundsReleased || !s.deliveredAt || s.disputeFrozen) return false;
+        const hoursElapsed = (now - new Date(s.deliveredAt).getTime()) / (1000 * 60 * 60);
+        return hoursElapsed >= 168;
+      });
+      if (toRelease.length === 0) return;
+
+      if (supabase) {
+        for (const s of toRelease) {
+          const txn = d.transactions.find((t) => t.id === s.txnId);
+          if (txn) {
+            const { error: tErr } = await updateTransaction(txn.id, { status: "completed" });
+            if (tErr) console.error("In Hand: auto-release transaction update failed", tErr);
+          }
+          const { error: sErr } = await updateShipmentById(s.id, {
+            fundsReleased: true,
+            autoReleased: true,
+          });
+          if (sErr) console.error("In Hand: auto-release shipment update failed", sErr);
+        }
+      }
+
+      setDb((prev) => {
+        const now2 = Date.now();
         let changed = false;
-        const newShipments = d.shipments.map(s => {
+        const newShipments = (prev.shipments || []).map((s) => {
           if (s.status === "delivered" && !s.fundsReleased && s.deliveredAt) {
             const deliveredMs = new Date(s.deliveredAt).getTime();
-            const hoursElapsed = (now - deliveredMs) / (1000 * 60 * 60);
-            if (hoursElapsed >= 168) { changed = true; return {...s, fundsReleased:true, autoReleased:true}; }
+            const hoursElapsed = (now2 - deliveredMs) / (1000 * 60 * 60);
+            if (hoursElapsed >= 168) {
+              changed = true;
+              return { ...s, fundsReleased: true, autoReleased: true };
+            }
           }
           return s;
         });
-        if (!changed) return d;
-        // Credit sellers for auto-released shipments
-        const releasedShipments = newShipments.filter(s=>s.autoReleased && !d.shipments.find(os=>os.id===s.id)?.autoReleased);
-        const newUsers = d.users.map(u => {
+        if (!changed) return prev;
+        const releasedShipments = newShipments.filter(
+          (s) => s.autoReleased && !prev.shipments.find((os) => os.id === s.id)?.autoReleased
+        );
+        const newUsers = prev.users.map((u) => {
           const earned = releasedShipments
-            .filter(s=>s.fromUser===u.id)
-            .reduce((sum,s)=>{ const txn=d.transactions.find(t=>t.id===s.txnId); return sum+(txn?txn.net:0); },0);
-          if(earned>0) return {...u, walletBalance:parseFloat((u.walletBalance+earned).toFixed(2))};
+            .filter((s) => s.fromUser === u.id)
+            .reduce((sum, s) => {
+              const txn = prev.transactions.find((t) => t.id === s.txnId);
+              return sum + (txn ? txn.net : 0);
+            }, 0);
+          if (earned > 0) return { ...u, walletBalance: parseFloat((u.walletBalance + earned).toFixed(2)) };
           return u;
         });
-        const newTxns = d.transactions.map(t => {
-          const released = releasedShipments.find(s=>s.txnId===t.id);
-          return released ? {...t, status:"completed"} : t;
+        const newTxns = prev.transactions.map((t) => {
+          const released = releasedShipments.find((s) => s.txnId === t.id);
+          return released ? { ...t, status: "completed" } : t;
         });
-        return {...d, shipments:newShipments, users:newUsers, transactions:newTxns};
+        return { ...prev, shipments: newShipments, users: newUsers, transactions: newTxns };
       });
     };
-    check(); // run once on load
-    const interval = setInterval(check, 60000); // check every minute
+
+    runAutoRelease();
+    const interval = setInterval(runAutoRelease, 60000);
     return () => clearInterval(interval);
   }, [dbLoaded]);
 
@@ -3601,6 +3672,18 @@ function AppShell({ onSignOut, authUser }) {
         console.error("In Hand: trade ownership transfer failed", error);
         notify("❌ Trade failed: could not update listings in Supabase");
         return;
+      }
+      let nextSelfWallet = null;
+      if (myUser) {
+        if (iOwe && payMethod === "wallet") nextSelfWallet = parseFloat((myUser.walletBalance - total).toFixed(2));
+        else if (!iOwe) nextSelfWallet = parseFloat((myUser.walletBalance - TRADE_FEE).toFixed(2));
+      }
+      if (nextSelfWallet != null) {
+        const { error: wErr } = await updateOwnUser(activeUserId, { walletBalance: nextSelfWallet });
+        if (wErr) {
+          console.error("In Hand: trade wallet update failed", wErr);
+          notify("⚠️ Trade saved; your wallet in Supabase may be out of sync — refresh");
+        }
       }
     }
 
@@ -3690,6 +3773,11 @@ function AppShell({ onSignOut, authUser }) {
         notify("❌ Could not flag message in Supabase");
         return;
       }
+      const { error: uErr } = await updateOwnUser(activeUserId, { flagCount: (myUser?.flagCount || 0) + 1 });
+      if (uErr) {
+        console.error("In Hand: user flag count update failed", uErr);
+        notify("⚠️ Thread flagged; profile flag count may be out of sync");
+      }
     }
     setDb(d => ({
       ...d,
@@ -3699,12 +3787,28 @@ function AppShell({ onSignOut, authUser }) {
     notify(`🚫 Message blocked — ${label} not allowed`);
   };
 
-  const handleSaveAddresses = (newAddresses) => {
+  const handleSaveAddresses = async (newAddresses) => {
+    if (supabase) {
+      const { error } = await updateOwnUser(activeUserId, { addresses: newAddresses });
+      if (error) {
+        console.error("In Hand: addresses save failed", error);
+        notify("❌ Could not save addresses to Supabase");
+        return;
+      }
+    }
     setDb(d => ({ ...d, users: d.users.map(u => u.id === activeUserId ? {...u, addresses: newAddresses} : u) }));
     notify("📍 Addresses saved!");
   };
 
-  const handleSaveProfile = ({ username, avatar, location, wishlist }) => {
+  const handleSaveProfile = async ({ username, avatar, location, wishlist }) => {
+    if (supabase) {
+      const { error } = await updateOwnUser(activeUserId, { username, avatar, location, wishlist });
+      if (error) {
+        console.error("In Hand: profile save failed", error);
+        notify("❌ Could not save profile to Supabase");
+        return;
+      }
+    }
     setDb(d => ({ ...d, users: d.users.map(u => u.id === activeUserId ? {...u, username, avatar, location, wishlist} : u) }));
     notify("✅ Profile updated!");
   };
@@ -3775,10 +3879,50 @@ function AppShell({ onSignOut, authUser }) {
     notify("⭐ Rating submitted — thanks!");
   };
 
-  const handleTopup = () => {    const amt = parseFloat(topupAmount);
-    if(!amt||amt<=0) return;
-    setDb(d=>({...d, users:d.users.map(u=>u.id===activeUserId?{...u,walletBalance:parseFloat((u.walletBalance+amt).toFixed(2))}:u)}));
-    notify(`✅ $${fmt(amt)} added to wallet`); setTopupAmount(""); setWalletAction(null);
+  const handleTopup = async () => {
+    const amt = parseFloat(topupAmount);
+    if (!amt || amt <= 0) return;
+    const nextBal = parseFloat(((myUser?.walletBalance || 0) + amt).toFixed(2));
+    if (supabase) {
+      const { error } = await updateOwnUser(activeUserId, { walletBalance: nextBal });
+      if (error) {
+        console.error("In Hand: wallet top-up failed", error);
+        notify("❌ Could not save wallet to Supabase");
+        return;
+      }
+    }
+    setDb((d) => ({
+      ...d,
+      users: d.users.map((u) =>
+        u.id === activeUserId ? { ...u, walletBalance: nextBal } : u
+      ),
+    }));
+    notify(`✅ $${fmt(amt)} added to wallet`);
+    setTopupAmount("");
+    setWalletAction(null);
+  };
+
+  const handleWithdraw = async () => {
+    const amt = parseFloat(topupAmount);
+    if (!amt || amt > (myUser?.walletBalance || 0)) return;
+    const nextBal = parseFloat(((myUser?.walletBalance || 0) - amt).toFixed(2));
+    if (supabase) {
+      const { error } = await updateOwnUser(activeUserId, { walletBalance: nextBal });
+      if (error) {
+        console.error("In Hand: wallet withdraw failed", error);
+        notify("❌ Could not save wallet to Supabase");
+        return;
+      }
+    }
+    setDb((d) => ({
+      ...d,
+      users: d.users.map((u) =>
+        u.id === activeUserId ? { ...u, walletBalance: nextBal } : u
+      ),
+    }));
+    notify(`✅ $${fmt(amt)} withdrawn`);
+    setTopupAmount("");
+    setWalletAction(null);
   };
 
   const visibleSwipeData = swipeCards.slice(-4).map(id=>enriched.find(c=>c.id===id)).filter(Boolean).reverse();
@@ -4245,7 +4389,7 @@ function AppShell({ onSignOut, authUser }) {
               <input value={topupAmount} onChange={e=>setTopupAmount(e.target.value)} placeholder={`Max $${fmt(myUser?.walletBalance||0)}`} type="number" style={{...IS,marginBottom:10}} />
               <div style={{ display:"flex",gap:8 }}>
                 <button onClick={()=>setWalletAction(null)} style={{ flex:1,background:"#EEF2F7",border:"none",borderRadius:10,padding:"10px",fontWeight:700,fontSize:13,color:"#555",cursor:"pointer" }}>Cancel</button>
-                <button onClick={()=>{ const amt=parseFloat(topupAmount); if(!amt||amt>myUser.walletBalance) return; setDb(d=>({...d,users:d.users.map(u=>u.id===activeUserId?{...u,walletBalance:parseFloat((u.walletBalance-amt).toFixed(2))}:u)})); notify(`✅ $${fmt(amt)} withdrawn`); setTopupAmount(""); setWalletAction(null); }} style={{ flex:2,background:"#2C3E50",border:"none",borderRadius:10,padding:"10px",fontWeight:800,fontSize:13,color:"#fff",cursor:"pointer" }}>Withdraw ${topupAmount||"0"}</button>
+                <button type="button" onClick={handleWithdraw} style={{ flex:2,background:"#2C3E50",border:"none",borderRadius:10,padding:"10px",fontWeight:800,fontSize:13,color:"#fff",cursor:"pointer" }}>Withdraw ${topupAmount||"0"}</button>
               </div>
             </div>
           )}
@@ -4552,7 +4696,17 @@ function AppShell({ onSignOut, authUser }) {
               <button onClick={()=>setTab("account")} style={{ background:"#E4EBF2",border:"none",borderRadius:10,padding:"6px 12px",fontSize:12,fontWeight:700,color:"#555",cursor:"pointer" }}>← Account</button>
               <div style={{ fontWeight:800,fontSize:18,color:"#2C3E50" }}>🗄️ Database</div>
             </div>
-            <button onClick={()=>{setDb({users:SEED_USERS,cards:SEED_CARDS,transactions:SEED_TRANSACTIONS,shipments:SEED_SHIPMENTS,disputes:SEED_DISPUTES,ratings:SEED_RATINGS,messages:SEED_MESSAGES,notifications:SEED_NOTIFICATIONS});notify("🔄 Reset");}} style={{ background:"#fff0f0",border:"none",borderRadius:10,padding:"6px 12px",fontSize:11,fontWeight:700,color:"#ff6b6b",cursor:"pointer" }}>Reset</button>
+            <button
+              type="button"
+              onClick={() => {
+                if (supabase) reloadFromSupabase();
+                else {
+                  setDb({ users:SEED_USERS,cards:SEED_CARDS,transactions:SEED_TRANSACTIONS,shipments:SEED_SHIPMENTS,disputes:SEED_DISPUTES,ratings:SEED_RATINGS,messages:SEED_MESSAGES,notifications:SEED_NOTIFICATIONS });
+                  notify("🔄 Reset");
+                }
+              }}
+              style={{ background:"#fff0f0",border:"none",borderRadius:10,padding:"6px 12px",fontSize:11,fontWeight:700,color:"#ff6b6b",cursor:"pointer" }}
+            >{supabase ? "Reload from cloud" : "Reset"}</button>
           </div>
           <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,marginBottom:18 }}>
             {[["👥",db.users.length,"Users"],["🤖",db.cards.length,"Figures"],["💸",db.transactions.length,"Txns"],["🚨",(db.disputes||[]).filter(d=>d.status==="open").length,"Disputes"]].map(([icon,val,label])=>(
