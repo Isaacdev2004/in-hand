@@ -3166,27 +3166,24 @@ export default function InHand() {
 
     let cancelled = false;
 
-    (async () => {
-      try {
-        const profile = await loadSessionProfile();
-        if (!cancelled && profile) setAuthUser(profile);
-      } catch (err) {
-        console.error("In Hand: session restore failed", err);
-      } finally {
-        if (!cancelled) setAuthLoading(false);
-      }
-    })();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    // Single path for session + profile: onAuthStateChange runs immediately with current session.
+    // Avoid a parallel loadSessionProfile() IIFE — React Strict Mode cleanup could set cancelled
+    // before that IIFE’s finally ran, leaving authLoading true forever ("Loading your account…").
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (!session?.user) {
-        setAuthUser(null);
+        if (!cancelled) setAuthUser(null);
+        setAuthLoading(false);
         return;
       }
       try {
         const profile = await ensureUserProfile(session.user);
-        setAuthUser(profile);
+        if (!cancelled) setAuthUser(profile);
       } catch (err) {
         console.error("In Hand: profile sync failed", err);
+      } finally {
+        setAuthLoading(false);
       }
     });
 
