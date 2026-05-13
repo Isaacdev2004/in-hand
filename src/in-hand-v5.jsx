@@ -20,7 +20,7 @@ import {
   insertRating,
 } from "./lib/marketplaceApi";
 import { startStripeCheckout } from "./lib/stripeCheckout";
-import { ensureUserProfile, loadSessionProfile } from "./lib/authSession";
+import { ensureUserProfile } from "./lib/authSession";
 import { updateOwnUser } from "./lib/usersApi";
 import {
   BellIcon,
@@ -2559,9 +2559,8 @@ function AuthScreen({ onAuth }) {
         password: form.password,
       });
       if (error) throw error;
-      const profile = await loadSessionProfile();
-      if (!profile) throw new Error("Could not load your profile.");
-      onAuth(profile);
+      // Profile + setAuthUser: parent `onAuthStateChange` only — avoids a second
+      // concurrent session/read path that races the auth storage lock.
     } catch (err) {
       setError(err?.message || "Sign-in failed.");
     } finally {

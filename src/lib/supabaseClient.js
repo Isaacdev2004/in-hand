@@ -10,7 +10,14 @@ const anon = process.env.REACT_APP_SUPABASE_ANON_KEY;
 export const supabase =
   url && anon
     ? createClient(url, anon, {
-        auth: { persistSession: true, autoRefreshToken: true },
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true,
+          // Default Web Locks cross-tab sync fights React Strict Mode + concurrent
+          // sign-in + onAuthStateChange ("lock … stolen"). Single-tab SPA: run auth
+          // work without a global lock (fine for one client instance).
+          lock: async (_name, _acquireTimeout, fn) => await fn(),
+        },
       })
     : null;
 
