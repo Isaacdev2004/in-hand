@@ -2484,40 +2484,66 @@ function EmailTemplatesScreen({ onBack }) {
 const IS_AUTH = { background:"#f7f7f7", border:"1.5px solid #DCE6F0", borderRadius:14, padding:"12px 16px", fontSize:14, fontFamily:"'Poppins',sans-serif", fontWeight:500, color:"#2C3E50", width:"100%", outline:"none" };
 
 function AuthScreen({ onAuth }) {
-  const [mode, setMode] = useState("login");       // login | signup | confirm | forgot | reset
-  const [form, setForm] = useState({ email:"", password:"", username:"", avatar:"🦖", confirmCode:"" });
+  const [mode, setMode] = useState("login");       // login | signup | signup_confirm | forgot | reset
+  const [form, setForm] = useState({ email:"", password:"", username:"", avatar:"🦖" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [generatedCode, setGeneratedCode] = useState("");
-  const [pendingUser, setPendingUser] = useState(null);
-  const setF = (k,v) => { setForm(f=>({...f,[k]:v})); setError(""); };
+  const [info, setInfo] = useState("");
+  /** Email used for signup_confirm resend (Supabase sends confirmation link, not a mock code). */
+  const [signupEmail, setSignupEmail] = useState("");
+  const setF = (k,v) => { setForm(f=>({...f,[k]:v})); setError(""); setInfo(""); };
 
-  // Simulate email send — in production dev replaces with Supabase Auth
-  const sendConfirmEmail = (email, code) => {
-    console.log(`[MOCK EMAIL] To: ${email} — Your In Hand confirmation code is: ${code}`);
-  };
-
-  const handleSignup = () => {
+  const handleSignup = async () => {
     if (!form.email || !form.password || !form.username) { setError("All fields are required"); return; }
     if (!form.email.includes("@")) { setError("Enter a valid email address"); return; }
     if (form.password.length < 8) { setError("Password must be at least 8 characters"); return; }
     if (form.username.length < 3) { setError("Username must be at least 3 characters"); return; }
+    if (!supabase) { setError("Supabase is not configured."); return; }
     setLoading(true);
-    const code = String(Math.floor(100000 + Math.random() * 900000));
-    setGeneratedCode(code);
-    sendConfirmEmail(form.email, code);
-    setPendingUser({ username:form.username, email:form.email, avatar:form.avatar });
-    setTimeout(() => { setLoading(false); setMode("confirm"); }, 1200);
+    setError("");
+    setInfo("");
+    try {
+      const { data, error: signErr } = await supabase.auth.signUp({
+        email: form.email.trim(),
+        password: form.password,
+        options: {
+          data: {
+            username: form.username.trim(),
+            avatar: form.avatar,
+          },
+        },
+      });
+      if (signErr) throw signErr;
+      setSignupEmail(form.email.trim());
+      if (data.session && data.user) {
+        const profile = await ensureUserProfile(data.user);
+        onAuth(profile);
+        return;
+      }
+      setMode("signup_confirm");
+    } catch (err) {
+      setError(err?.message || "Sign up failed.");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleConfirm = () => {
-    if (form.confirmCode.length !== 6) { setError("Enter the 6-digit code"); return; }
-    if (form.confirmCode !== generatedCode) { setError("Incorrect code. Please try again."); return; }
+  const handleResendSignupEmail = async () => {
+    if (!supabase || !signupEmail) return;
     setLoading(true);
-    setTimeout(() => {
+    setError("");
+    try {
+      const { error: resendErr } = await supabase.auth.resend({
+        type: "signup",
+        email: signupEmail,
+      });
+      if (resendErr) throw resendErr;
+      setInfo("Another confirmation email is on its way.");
+    } catch (err) {
+      setError(err?.message || "Could not resend email.");
+    } finally {
       setLoading(false);
-      onAuth({ ...pendingUser, id:"u"+Date.now(), isNew:true });
-    }, 800);
+    }
   };
 
   const handleLogin = async () => {
@@ -2542,20 +2568,24 @@ function AuthScreen({ onAuth }) {
     }
   };
 
-  const handleForgot = () => {
+  const handleForgot = async () => {
     if (!form.email.includes("@")) { setError("Enter your email address"); return; }
+    if (!supabase) { setError("Supabase is not configured."); return; }
     setLoading(true);
-    const code = String(Math.floor(100000 + Math.random() * 900000));
-    setGeneratedCode(code);
-    sendConfirmEmail(form.email, code);
-    setTimeout(() => { setLoading(false); setMode("reset"); notify && notify("📧 Reset code sent!"); }, 1000);
-  };
-
-  const handleReset = () => {
-    if (form.confirmCode !== generatedCode) { setError("Incorrect code"); return; }
-    if (form.password.length < 8) { setError("Password must be at least 8 characters"); return; }
-    setLoading(true);
-    setTimeout(() => { setLoading(false); setMode("login"); setForm(f=>({...f,confirmCode:"",password:""})); }, 800);
+    setError("");
+    setInfo("");
+    try {
+      const { error: resetErr } = await supabase.auth.resetPasswordForEmail(form.email.trim(), {
+        redirectTo: `${window.location.origin}/`,
+      });
+      if (resetErr) throw resetErr;
+      setInfo("If that email is registered, we sent a reset link. Check your inbox and spam.");
+      setMode("login");
+    } catch (err) {
+      setError(err?.message || "Could not send reset email.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const Spinner = () => <div style={{ width:20,height:20,border:"3px solid rgba(255,255,255,0.3)",borderTop:"3px solid #fff",borderRadius:"50%",animation:"spin 0.8s linear infinite",display:"inline-block" }} />;
@@ -2592,17 +2622,16 @@ function AuthScreen({ onAuth }) {
                 onKeyDown={e=>e.key==="Enter"&&handleLogin()} />
             </div>
             {error && <div style={{ color:"#ff6b6b", fontSize:12, fontWeight:600, marginBottom:12 }}>⚠️ {error}</div>}
-            <button onClick={()=>{setMode("forgot");setError("");}} style={{ fontSize:12, color:"#aaa", background:"none", border:"none", cursor:"pointer", marginBottom:20, padding:0, fontFamily:"'Poppins',sans-serif" }}>Forgot password?</button>
+            {info && <div style={{ color:"#00b894", fontSize:12, fontWeight:600, marginBottom:12 }}>{info}</div>}
+            <button onClick={()=>{setMode("forgot");setError("");setInfo("");}} style={{ fontSize:12, color:"#aaa", background:"none", border:"none", cursor:"pointer", marginBottom:20, padding:0, fontFamily:"'Poppins',sans-serif" }}>Forgot password?</button>
             <button onClick={handleLogin} disabled={loading} style={{ width:"100%", background:"#2C3E50", border:"none", borderRadius:14, padding:"14px", color:"#fff", fontWeight:800, fontSize:15, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:10, marginBottom:16 }}>
               {loading ? <Spinner /> : "Sign In"}
             </button>
             <div style={{ textAlign:"center", fontSize:13, color:"#aaa" }}>
-              No account? <span onClick={()=>{setMode("signup");setError("");}} style={{ color:"#4A90D9", fontWeight:700, cursor:"pointer" }}>Sign up free</span>
+              No account? <span onClick={()=>{setMode("signup");setError("");setInfo("");}} style={{ color:"#4A90D9", fontWeight:700, cursor:"pointer" }}>Sign up free</span>
             </div>
-            {/* Demo hint */}
-            <div style={{ marginTop:20, background:"#EAF1FA", borderRadius:12, padding:"10px 14px", fontSize:11, color:"#3A7BD5", textAlign:"center", fontWeight:600 }}>
-              🎭 Demo mode — any email/password logs you in<br/>
-              <span style={{ fontWeight:400, color:"#888" }}>Your dev will connect Supabase Auth</span>
+            <div style={{ marginTop:20, background:"#EAF1FA", borderRadius:12, padding:"10px 14px", fontSize:11, color:"#3A7BD5", textAlign:"center", fontWeight:600, lineHeight:1.5 }}>
+              Use the email and password you registered with. New accounts get a confirmation link by email before first sign-in.
             </div>
           </>
         )}
@@ -2635,62 +2664,40 @@ function AuthScreen({ onAuth }) {
             </div>
 
             {error && <div style={{ color:"#ff6b6b", fontSize:12, fontWeight:600, marginBottom:12 }}>⚠️ {error}</div>}
+            {info && <div style={{ color:"#00b894", fontSize:12, fontWeight:600, marginBottom:12 }}>{info}</div>}
             <button onClick={handleSignup} disabled={loading} style={{ width:"100%", background:"linear-gradient(135deg,#4A90D9,#f0932b)", border:"none", borderRadius:14, padding:"14px", color:"#fff", fontWeight:800, fontSize:15, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:10, marginBottom:16, boxShadow:"0 4px 16px rgba(253,121,168,0.4)" }}>
               {loading ? <Spinner /> : "Create Account →"}
             </button>
             <div style={{ textAlign:"center", fontSize:13, color:"#aaa" }}>
-              Already have one? <span onClick={()=>{setMode("login");setError("");}} style={{ color:"#2C3E50", fontWeight:700, cursor:"pointer" }}>Sign in</span>
+              Already have one? <span onClick={()=>{setMode("login");setError("");setInfo("");}} style={{ color:"#2C3E50", fontWeight:700, cursor:"pointer" }}>Sign in</span>
             </div>
           </>
         )}
 
-        {/* ── EMAIL CONFIRMATION ── */}
-        {mode==="confirm" && (
+        {/* ── SIGNUP: confirm via email link (Supabase + Resend SMTP) ── */}
+        {mode==="signup_confirm" && (
           <>
             <div style={{ textAlign:"center", marginBottom:20 }}>
               <div style={{ fontSize:52, marginBottom:12 }}>📧</div>
-              <div style={{ fontWeight:800, fontSize:20, color:"#2C3E50", marginBottom:6 }}>Check your email</div>
-              <div style={{ fontSize:13, color:"#aaa", lineHeight:1.5 }}>
-                We sent a 6-digit confirmation code to<br/>
-                <strong style={{ color:"#2C3E50" }}>{form.email}</strong>
+              <div style={{ fontWeight:800, fontSize:20, color:"#2C3E50", marginBottom:6 }}>Confirm your email</div>
+              <div style={{ fontSize:13, color:"#aaa", lineHeight:1.6 }}>
+                We sent a <strong style={{ color:"#2C3E50" }}>confirmation link</strong> to<br/>
+                <strong style={{ color:"#2C3E50" }}>{signupEmail}</strong>
+                <br /><br />
+                Open the email, tap the link, then return here and <strong>sign in</strong> with the password you chose.
               </div>
             </div>
-
-            {/* Code input */}
-            <div style={{ display:"flex", gap:8, justifyContent:"center", marginBottom:20 }}>
-              {[0,1,2,3,4,5].map(i=>(
-                <input
-                  key={i}
-                  maxLength={1}
-                  value={form.confirmCode[i]||""}
-                  onChange={e=>{
-                    const val = e.target.value.replace(/\D/g,"");
-                    const code = form.confirmCode.split("");
-                    code[i] = val;
-                    setF("confirmCode", code.join("").slice(0,6));
-                    if(val && e.target.nextSibling) e.target.nextSibling.focus();
-                  }}
-                  onKeyDown={e=>{ if(e.key==="Backspace"&&!form.confirmCode[i]&&e.target.previousSibling) e.target.previousSibling.focus(); }}
-                  style={{ width:44, height:54, borderRadius:14, textAlign:"center", fontSize:22, fontWeight:900, color:"#2C3E50", background:form.confirmCode[i]?"#EAF1FA":"#f9f9f9", border:`2px solid ${form.confirmCode[i]?"#3A7BD5":"#DCE6F0"}`, fontFamily:"'Poppins',sans-serif", transition:"all 0.15s" }}
-                />
-              ))}
-            </div>
-
             {error && <div style={{ color:"#ff6b6b", fontSize:12, fontWeight:600, marginBottom:12, textAlign:"center" }}>⚠️ {error}</div>}
-
-            <button onClick={handleConfirm} disabled={loading||form.confirmCode.length!==6} style={{ width:"100%", background:form.confirmCode.length===6?"#2C3E50":"#eee", border:"none", borderRadius:14, padding:"14px", color:form.confirmCode.length===6?"#fff":"#aaa", fontWeight:800, fontSize:15, cursor:form.confirmCode.length===6?"pointer":"default", display:"flex", alignItems:"center", justifyContent:"center", gap:10, marginBottom:16 }}>
-              {loading ? <Spinner /> : "Confirm Email ✓"}
+            {info && <div style={{ color:"#00b894", fontSize:12, fontWeight:600, marginBottom:12, textAlign:"center" }}>{info}</div>}
+            <button onClick={()=>{ setMode("login"); setError(""); setInfo(""); }} style={{ width:"100%", background:"#2C3E50", border:"none", borderRadius:14, padding:"14px", color:"#fff", fontWeight:800, fontSize:15, cursor:"pointer", marginBottom:12 }}>
+              Back to sign in
             </button>
-
-            <div style={{ textAlign:"center" }}>
-              <span style={{ fontSize:12, color:"#aaa" }}>Didn't get it? </span>
-              <span onClick={()=>{ const code=String(Math.floor(100000+Math.random()*900000)); setGeneratedCode(code); sendConfirmEmail(form.email,code); setF("confirmCode",""); }} style={{ fontSize:12, color:"#3A7BD5", fontWeight:700, cursor:"pointer" }}>Resend code</span>
+            <div style={{ textAlign:"center", marginBottom:8 }}>
+              <span style={{ fontSize:12, color:"#aaa" }}>Didn’t get it? </span>
+              <span onClick={handleResendSignupEmail} style={{ fontSize:12, color:"#3A7BD5", fontWeight:700, cursor:"pointer" }}>Resend email</span>
             </div>
-
-            {/* Demo hint */}
-            <div style={{ marginTop:20, background:"#fff8e6", borderRadius:12, padding:"10px 14px", fontSize:11, color:"#f0932b", textAlign:"center", fontWeight:600 }}>
-              🎭 Demo: check the browser console for the code<br/>
-              <span style={{ fontWeight:400, color:"#888" }}>Supabase will send real emails in production</span>
+            <div style={{ marginTop:16, background:"#f9f9f9", borderRadius:12, padding:"10px 14px", fontSize:11, color:"#888", textAlign:"center", lineHeight:1.5 }}>
+              Check spam/promotions. Auth emails go through your Supabase SMTP (e.g. Resend).
             </div>
           </>
         )}
@@ -2699,30 +2706,32 @@ function AuthScreen({ onAuth }) {
         {mode==="forgot" && (
           <>
             <div style={{ fontWeight:800, fontSize:22, color:"#2C3E50", marginBottom:6 }}>Reset password</div>
-            <div style={{ fontSize:13, color:"#aaa", marginBottom:24 }}>Enter your email and we'll send a reset code</div>
+            <div style={{ fontSize:13, color:"#aaa", marginBottom:24 }}>Enter your email and we will send a reset link</div>
             <input value={form.email} onChange={e=>setF("email",e.target.value)} placeholder="Email address" type="email" style={{...IS_AUTH, marginBottom:16}} />
             {error && <div style={{ color:"#ff6b6b", fontSize:12, fontWeight:600, marginBottom:12 }}>⚠️ {error}</div>}
+            {info && <div style={{ color:"#00b894", fontSize:12, fontWeight:600, marginBottom:12 }}>{info}</div>}
             <button onClick={handleForgot} disabled={loading} style={{ width:"100%", background:"#2C3E50", border:"none", borderRadius:14, padding:"14px", color:"#fff", fontWeight:800, fontSize:15, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:10, marginBottom:16 }}>
-              {loading ? <Spinner /> : "Send Reset Code"}
+              {loading ? <Spinner /> : "Send reset link"}
             </button>
             <div style={{ textAlign:"center", fontSize:13, color:"#aaa" }}>
-              <span onClick={()=>{setMode("login");setError("");}} style={{ color:"#2C3E50", fontWeight:700, cursor:"pointer" }}>← Back to login</span>
+              <span onClick={()=>{setMode("login");setError("");setInfo("");}} style={{ color:"#2C3E50", fontWeight:700, cursor:"pointer" }}>← Back to login</span>
+            </div>
+            <div style={{ marginTop:16, fontSize:11, color:"#bbb", textAlign:"center", lineHeight:1.5 }}>
+              We email a secure link (not a fake code). Use the link, then sign in with your new password.
             </div>
           </>
         )}
 
-        {/* ── RESET PASSWORD ── */}
+        {/* ── RESET PASSWORD (link in email; Supabase handles token on return) ── */}
         {mode==="reset" && (
           <>
-            <div style={{ fontWeight:800, fontSize:22, color:"#2C3E50", marginBottom:6 }}>New password</div>
-            <div style={{ fontSize:13, color:"#aaa", marginBottom:20 }}>Enter the code from your email and a new password</div>
-            <div style={{ display:"flex", flexDirection:"column", gap:12, marginBottom:16 }}>
-              <input value={form.confirmCode} onChange={e=>setF("confirmCode",e.target.value.replace(/\D/g,"").slice(0,6))} placeholder="6-digit reset code" style={IS_AUTH} maxLength={6} />
-              <input value={form.password} onChange={e=>setF("password",e.target.value)} placeholder="New password (min 8 chars)" type="password" style={IS_AUTH} />
+            <div style={{ fontWeight:800, fontSize:22, color:"#2C3E50", marginBottom:6 }}>Check your email</div>
+            <div style={{ fontSize:13, color:"#aaa", marginBottom:20, lineHeight:1.6 }}>
+              Password reset uses a <strong style={{ color:"#2C3E50" }}>link</strong> from Supabase (via your SMTP). After you set a new password in the browser tab that opens, come back here and sign in.
             </div>
             {error && <div style={{ color:"#ff6b6b", fontSize:12, fontWeight:600, marginBottom:12 }}>⚠️ {error}</div>}
-            <button onClick={handleReset} disabled={loading} style={{ width:"100%", background:"#2C3E50", border:"none", borderRadius:14, padding:"14px", color:"#fff", fontWeight:800, fontSize:15, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:10, marginBottom:16 }}>
-              {loading ? <Spinner /> : "Reset Password ✓"}
+            <button onClick={()=>{ setMode("login"); setError(""); setInfo(""); }} style={{ width:"100%", background:"#2C3E50", border:"none", borderRadius:14, padding:"14px", color:"#fff", fontWeight:800, fontSize:15, cursor:"pointer", marginBottom:16 }}>
+              Back to sign in
             </button>
           </>
         )}
