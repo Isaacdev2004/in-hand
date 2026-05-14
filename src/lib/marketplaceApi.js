@@ -56,6 +56,8 @@ function disputeToRow(d) {
     resolved_at: d.resolvedAt || null,
     figure_value: d.figureValue ?? 0,
     figure_name: d.figureName || null,
+    type: d.disputeType || "purchase",
+    against_user: d.againstUsername ?? null,
   };
 }
 

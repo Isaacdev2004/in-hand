@@ -1,6 +1,6 @@
 {
   "name": "in-hand",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "private": true,
   "dependencies": {
     "@stripe/stripe-js": "^9.3.1",

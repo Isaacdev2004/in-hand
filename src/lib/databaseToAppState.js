@@ -109,6 +109,8 @@ function disputeFromRow(r) {
     resolvedAt: r.resolved_at,
     figureValue: r.figure_value,
     figureName: r.figure_name,
+    disputeType: r.type || "purchase",
+    againstUsername: r.against_user || "",
   };
 }
 

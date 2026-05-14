@@ -68,8 +68,8 @@ insert into public.shipments (id, txn_id, tracking_number, carrier, status, esti
   ]$json$::jsonb);
 
 -- DISPUTES
-insert into public.disputes (id, txn_id, raised_by, against_user_id, shipment_id, reason, detail, status, resolution, admin_note, raised_at, resolved_at, figure_value, figure_name) values
-  ('d1', 't1', 'u1', 'u3', 'sh2', 'not_as_described', 'Figure had heavy yellowing not shown in listing photos.', 'resolved', 'refund_partial', 'Partial refund of $80 issued. Seller agreed.', '2024-11-02', '2024-11-04', 580, 'Optimus Prime G1 Boxed');
+insert into public.disputes (id, txn_id, raised_by, against_user_id, shipment_id, reason, detail, status, resolution, admin_note, raised_at, resolved_at, figure_value, figure_name, type, against_user) values
+  ('d1', 't1', 'u1', 'u3', 'sh2', 'not_as_described', 'Figure had heavy yellowing not shown in listing photos.', 'resolved', 'refund_partial', 'Partial refund of $80 issued. Seller agreed.', '2024-11-02', '2024-11-04', 580, 'Optimus Prime G1 Boxed', 'purchase', 'BotCollector88');
 
 -- RATINGS
 insert into public.ratings (id, txn_id, from_user_id, to_user_id, score, comment, type, date) values

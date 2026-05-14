@@ -322,7 +322,7 @@ const SEED_SHIPMENTS = [
 
 const SEED_DISPUTES = [
   // Example resolved dispute for reference
-  { id:"d1", txnId:"t1", raisedBy:"u1", againstUserId:"u3", shipmentId:"sh2", reason:"not_as_described", detail:"Figure had heavy yellowing not shown in listing photos.", status:"resolved", resolution:"refund_partial", adminNote:"Partial refund of $80 issued. Seller agreed.", raisedAt:"2024-11-02", resolvedAt:"2024-11-04", figureValue:580, figureName:"Optimus Prime G1 Boxed" },
+  { id:"d1", txnId:"t1", raisedBy:"u1", againstUserId:"u3", shipmentId:"sh2", reason:"not_as_described", detail:"Figure had heavy yellowing not shown in listing photos.", status:"resolved", resolution:"refund_partial", adminNote:"Partial refund of $80 issued. Seller agreed.", raisedAt:"2024-11-02", resolvedAt:"2024-11-04", figureValue:580, figureName:"Optimus Prime G1 Boxed", disputeType:"purchase", againstUsername:"BotCollector88" },
 ];
 
 const SEED_RATINGS = [
@@ -1764,20 +1764,31 @@ const PACKAGING_TIPS = [
   { icon:"💰", tip:"For items over $100 — USPS insurance is automatically added to your label to cover damage in transit." },
 ];
 
-function DisputeModal({ txn, shipment, onSubmit, onClose }) {
+function DisputeModal({ txn, shipment, disputeKind = "purchase", onSubmit, onClose }) {
   const [step, setStep] = useState("reason");   // reason | detail | confirm | done
   const [reason, setReason] = useState(null);
   const [detail, setDetail] = useState("");
-  const withinWindow = shipment?.deliveredAt
-    ? (Date.now() - new Date(shipment.deliveredAt).getTime()) < 48 * 3600000
-    : true;
+  const isTrade = disputeKind === "trade";
+  const purchaseDeliveredMs = shipment?.deliveredAt
+    ? Date.now() - new Date(shipment.deliveredAt).getTime()
+    : 0;
+  const withinPurchaseWindow =
+    !shipment?.deliveredAt || purchaseDeliveredMs < 7 * 24 * 3600000;
+  const tradeStartMs = txn?.date ? new Date(`${txn.date}T12:00:00`).getTime() : 0;
+  const withinTradeWindow =
+    !isTrade || !tradeStartMs || Date.now() - tradeStartMs < 30 * 24 * 3600000;
+  const withinWindow = isTrade ? withinTradeWindow : withinPurchaseWindow;
 
   if (!withinWindow) return (
     <div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:700,display:"flex",alignItems:"flex-end",justifyContent:"center" }}>
       <div style={{ background:"#fff",borderRadius:"28px 28px 0 0",padding:"28px 20px 40px",width:"100%",maxWidth:430,textAlign:"center" }}>
         <div style={{ fontSize:52,marginBottom:12 }}>⏰</div>
         <div style={{ fontWeight:800,fontSize:18,color:"#2C3E50",marginBottom:8 }}>Dispute Window Closed</div>
-        <div style={{ fontSize:13,color:"#aaa",marginBottom:20 }}>Disputes must be filed within 7 days of delivery. Funds have already been released to the seller.</div>
+        <div style={{ fontSize:13,color:"#aaa",marginBottom:20 }}>
+          {isTrade
+            ? "Trade issues must be reported within 30 days of the trade date."
+            : "Disputes must be filed within 7 days of delivery. Funds may have already been released to the seller."}
+        </div>
         <Btn onClick={onClose} style={{ background:"#2C3E50",color:"#fff",width:"100%" }}>OK</Btn>
       </div>
     </div>
@@ -1788,18 +1799,28 @@ function DisputeModal({ txn, shipment, onSubmit, onClose }) {
       <div style={{ background:"#fff",borderRadius:"28px 28px 0 0",padding:"24px 20px 40px",width:"100%",maxWidth:430,maxHeight:"85vh",overflowY:"auto" }}>
         <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20 }}>
           <div>
-            <div style={{ fontWeight:800,fontSize:18,color:"#2C3E50" }}>🚨 Report a Problem</div>
-            <div style={{ fontSize:11,color:"#aaa",marginTop:2 }}>{txn.cardName} · ${txn.amount}</div>
+            <div style={{ fontWeight:800,fontSize:18,color:"#2C3E50" }}>{isTrade ? "🤝 Report a trade issue" : "🚨 Report a Problem"}</div>
+            <div style={{ fontSize:11,color:"#aaa",marginTop:2 }}>
+              {isTrade ? `${txn.cardName}` : `${txn.cardName} · $${txn.amount}`}
+            </div>
           </div>
           <button onClick={step==="reason"?onClose:()=>setStep("reason")} style={{ background:"#E4EBF2",border:"none",borderRadius:"50%",width:32,height:32,fontSize:16,cursor:"pointer" }}>{step==="reason"?"✕":"←"}</button>
         </div>
 
         {/* 7d window warning */}
-        {shipment?.deliveredAt && (
+        {shipment?.deliveredAt && !isTrade && (
           <div style={{ background:"#fff8e6",border:"1.5px solid #f9ca24",borderRadius:12,padding:"10px 14px",marginBottom:16,display:"flex",gap:8,alignItems:"center" }}>
             <span style={{ fontSize:16 }}>⏱️</span>
             <div style={{ fontSize:11,fontWeight:600,color:"#f0932b" }}>
               You have 7 days from delivery to file a dispute. Escrow will be frozen immediately.
+            </div>
+          </div>
+        )}
+        {isTrade && (
+          <div style={{ background:"#EAF1FA",border:"1.5px solid #DCE6F0",borderRadius:12,padding:"10px 14px",marginBottom:16,display:"flex",gap:8,alignItems:"center" }}>
+            <span style={{ fontSize:16 }}>🤝</span>
+            <div style={{ fontSize:11,fontWeight:600,color:"#3A7BD5" }}>
+              Trade disputes do not freeze a delivery escrow. Our team will review and may contact both traders.
             </div>
           </div>
         )}
@@ -1867,10 +1888,10 @@ function DisputeModal({ txn, shipment, onSubmit, onClose }) {
             <div style={{ background:"#fff0f0",border:"2px solid #ff6b6b",borderRadius:16,padding:"16px",marginBottom:16 }}>
               <div style={{ fontWeight:800,fontSize:14,color:"#ff6b6b",marginBottom:10 }}>⚠️ Before you submit</div>
               {[
-                "Escrow will be frozen — seller cannot receive funds until resolved",
+                isTrade ? "Support will review your report and may message both parties" : "Escrow will be frozen — seller cannot receive funds until resolved",
                 "Admin will review within 24 hours",
                 "False disputes may affect your account rating",
-                "You may be asked to return the item if a refund is granted",
+                isTrade ? "Be ready to share photos or tracking if asked" : "You may be asked to return the item if a refund is granted",
               ].map((t,i) => (
                 <div key={i} style={{ display:"flex",gap:8,marginBottom:6,alignItems:"flex-start" }}>
                   <span style={{ color:"#ff6b6b",fontSize:12,marginTop:1 }}>•</span>
@@ -1885,7 +1906,7 @@ function DisputeModal({ txn, shipment, onSubmit, onClose }) {
             </div>
             <div style={{ display:"flex",gap:8 }}>
               <button onClick={()=>setStep("detail")} style={{ flex:1,background:"#EEF2F7",border:"none",borderRadius:12,padding:"12px",fontWeight:700,fontSize:13,color:"#555",cursor:"pointer" }}>← Back</button>
-              <Btn onClick={()=>{ onSubmit({ txn, shipment, reason:reason.id, detail }); setStep("done"); }} style={{ flex:2,background:"linear-gradient(135deg,#ff6b6b,#ee5a24)",color:"#fff" }}>Submit Dispute 🚨</Btn>
+              <Btn onClick={()=>{ onSubmit({ txn, shipment, reason: reason.id, detail, disputeKind }); setStep("done"); }} style={{ flex:2,background:"linear-gradient(135deg,#ff6b6b,#ee5a24)",color:"#fff" }}>Submit Dispute 🚨</Btn>
             </div>
           </>
         )}
@@ -1893,11 +1914,15 @@ function DisputeModal({ txn, shipment, onSubmit, onClose }) {
         {/* STEP: DONE */}
         {step==="done" && (
           <div style={{ textAlign:"center",padding:"20px 0" }}>
-            <div style={{ fontSize:52,marginBottom:14 }}>🔒</div>
-            <div style={{ fontWeight:800,fontSize:20,color:"#2C3E50",marginBottom:8 }}>Dispute Filed</div>
-            <div style={{ fontSize:13,color:"#aaa",marginBottom:6 }}>Escrow is now frozen</div>
+            <div style={{ fontSize:52,marginBottom:14 }}>{isTrade ? "🤝" : "🔒"}</div>
+            <div style={{ fontWeight:800,fontSize:20,color:"#2C3E50",marginBottom:8 }}>{isTrade ? "Report received" : "Dispute Filed"}</div>
+            <div style={{ fontSize:13,color:"#aaa",marginBottom:6 }}>{isTrade ? "Support will follow up if needed" : "Escrow is now frozen"}</div>
             <div style={{ background:"#f9f9f9",borderRadius:14,padding:"14px",marginBottom:24,textAlign:"left" }}>
-              {[["Status","Under Review 🔍"],["Response time","Within 24 hours"],["Your case","Logged & assigned"]].map(([l,v])=>(
+              {[
+                ["Status", "Under Review 🔍"],
+                ["Response time", "Within 24 hours"],
+                ["Your case", isTrade ? "Trade dispute logged" : "Logged & assigned"],
+              ].map(([l,v])=>(
                 <div key={l} style={{ display:"flex",justifyContent:"space-between",marginBottom:6 }}>
                   <span style={{ fontSize:12,color:"#aaa" }}>{l}</span>
                   <span style={{ fontSize:12,fontWeight:700,color:"#2C3E50" }}>{v}</span>
@@ -4003,8 +4028,28 @@ function AppShell({ onSignOut, authUser }) {
     notify("✅ Profile updated!");
   };
 
-  const handleSubmitDispute = async ({ txn, shipment, reason, detail }) => {
-    const dispute = { id:"d"+Date.now(), txnId:txn.id, raisedBy:activeUserId, againstUserId:txn.sellerId, shipmentId:shipment?.id||null, reason, detail, status:"open", resolution:null, adminNote:null, raisedAt:new Date().toISOString().split("T")[0], resolvedAt:null, figureValue:txn.amount, figureName:txn.cardName };
+  const handleSubmitDispute = async ({ txn, shipment, reason, detail, disputeKind }) => {
+    const isTrade = disputeKind === "trade";
+    const counterpartyId = txn.buyerId === activeUserId ? txn.sellerId : txn.buyerId;
+    const counterparty = getUser(counterpartyId);
+    const dispute = {
+      id: "d" + Date.now(),
+      txnId: txn.id,
+      raisedBy: activeUserId,
+      againstUserId: counterpartyId,
+      shipmentId: shipment?.id || null,
+      reason,
+      detail,
+      status: "open",
+      resolution: null,
+      adminNote: null,
+      raisedAt: new Date().toISOString().split("T")[0],
+      resolvedAt: null,
+      figureValue: txn.amount ?? 0,
+      figureName: txn.cardName,
+      disputeType: isTrade ? "trade" : "purchase",
+      againstUsername: counterparty?.username || "",
+    };
     if (supabase) {
       const { error: dErr } = await insertDispute(dispute);
       if (dErr) {
@@ -4012,7 +4057,7 @@ function AppShell({ onSignOut, authUser }) {
         notify("❌ Could not file dispute in Supabase");
         return;
       }
-      if (shipment?.id) {
+      if (!isTrade && shipment?.id) {
         const { error: sErr } = await updateShipmentById(shipment.id, { disputeFrozen: true });
         if (sErr) {
           console.error("In Hand: dispute shipment freeze update failed", sErr);
@@ -4020,22 +4065,32 @@ function AppShell({ onSignOut, authUser }) {
           return;
         }
       }
-      const { error: tErr } = await updateTransaction(txn.id, { status: "disputed" });
-      if (tErr) {
-        console.error("In Hand: dispute transaction status update failed", tErr);
-        notify("❌ Could not file dispute in Supabase");
-        return;
+      if (!isTrade) {
+        const { error: tErr } = await updateTransaction(txn.id, { status: "disputed" });
+        if (tErr) {
+          console.error("In Hand: dispute transaction status update failed", tErr);
+          notify("❌ Could not file dispute in Supabase");
+          return;
+        }
       }
     }
-    // Freeze the escrow — stop auto-release
-    setDb(d => ({
+    setDb((d) => ({
       ...d,
-      disputes: [...(d.disputes||[]), dispute],
-      shipments: d.shipments.map(s => s.id===shipment?.id ? {...s, disputeFrozen:true} : s),
-      transactions: d.transactions.map(t => t.id===txn.id ? {...t, status:"disputed"} : t),
+      disputes: [...(d.disputes || []), dispute],
+      shipments:
+        !isTrade && shipment?.id
+          ? d.shipments.map((s) => (s.id === shipment.id ? { ...s, disputeFrozen: true } : s))
+          : d.shipments,
+      transactions: !isTrade
+        ? d.transactions.map((t) => (t.id === txn.id ? { ...t, status: "disputed" } : t))
+        : d.transactions,
     }));
     setDisputeModal(null);
-    notify("🚨 Dispute filed — escrow frozen. Admin will review within 24h.");
+    notify(
+      isTrade
+        ? "🤝 Trade dispute filed — support will review."
+        : "🚨 Dispute filed — escrow frozen. Admin will review within 24h."
+    );
   };
 
   const handleSubmitRating = async ({ txn, toUserId, score, comment, type }) => {
@@ -4144,7 +4199,7 @@ function AppShell({ onSignOut, authUser }) {
       {marketModal && <MarketValueModal card={marketModal} onClose={()=>setMarketModal(null)} />}
       {showAddressModal && <AddressModal addresses={myUser?.addresses||[]} onSave={handleSaveAddresses} onClose={()=>setShowAddressModal(false)} />}
       {showEditProfile && <EditProfileModal user={myUser} onSave={handleSaveProfile} onClose={()=>setShowEditProfile(false)} />}
-      {disputeModal && <DisputeModal txn={disputeModal.txn} shipment={disputeModal.shipment} onSubmit={handleSubmitDispute} onClose={()=>setDisputeModal(null)} />}
+      {disputeModal && <DisputeModal txn={disputeModal.txn} shipment={disputeModal.shipment} disputeKind={disputeModal.disputeKind || "purchase"} onSubmit={handleSubmitDispute} onClose={()=>setDisputeModal(null)} />}
       {ratingModal && <RatingModal txn={ratingModal.txn} otherUser={ratingModal.otherUser} isBuyer={ratingModal.isBuyer} onSubmit={handleSubmitRating} onClose={()=>setRatingModal(null)} />}
       {showPackagingGuide && <PackagingGuideModal figureValue={addTrackingFor?.amount||0} onConfirm={()=>setShowPackagingGuide(false)} onClose={()=>setShowPackagingGuide(false)} />}
       {photoViewer && <PhotoViewer photos={photoViewer.photos} startIdx={photoViewer.startIdx||0} onClose={()=>setPhotoViewer(null)} />}
@@ -4242,7 +4297,7 @@ function AppShell({ onSignOut, authUser }) {
               {s.status==="delivered" && s.toUser===activeUserId && !s.fundsReleased && !s.disputeFrozen && (() => {
                 const txn = db.transactions.find(t=>t.id===s.txnId);
                 return txn ? (
-                  <button onClick={()=>setDisputeModal({ txn, shipment:s })} style={{ width:"100%",background:"#fff0f0",border:"2px solid #ff6b6b",borderRadius:12,padding:"11px",fontWeight:800,fontSize:13,color:"#ff6b6b",cursor:"pointer",marginTop:10,display:"flex",alignItems:"center",justifyContent:"center",gap:6 }}>
+                  <button onClick={()=>setDisputeModal({ txn, shipment:s, disputeKind:"purchase" })} style={{ width:"100%",background:"#fff0f0",border:"2px solid #ff6b6b",borderRadius:12,padding:"11px",fontWeight:800,fontSize:13,color:"#ff6b6b",cursor:"pointer",marginTop:10,display:"flex",alignItems:"center",justifyContent:"center",gap:6 }}>
                     🚨 Report a Problem
                   </button>
                 ) : null;
@@ -4647,17 +4702,21 @@ function AppShell({ onSignOut, authUser }) {
               const alreadyRated = (db.ratings||[]).some(r=>r.txnId===txn.id&&r.fromUserId===activeUserId);
               const shipment = (db.shipments||[]).find(s=>s.txnId===txn.id);
               const canDispute = isBuyer && txn.status==="in_escrow" && shipment?.status==="delivered" && !shipment?.disputeFrozen;
+              const tradeDisputeOpen = txn.type==="trade" && (db.disputes||[]).some(d=>d.txnId===txn.id && d.status==="open");
+              const canTradeDispute = txn.type==="trade" && txn.status==="completed" && !tradeDisputeOpen;
+              const showActions = (txn.status==="completed" && !alreadyRated && otherUser) || canDispute || canTradeDispute;
               return (
                 <div key={txn.id} style={{ background:"#fff",borderRadius:16,padding:"14px 16px",marginBottom:10,boxShadow:"0 2px 10px rgba(0,0,0,0.05)",border:`1px solid ${txn.status==="disputed"?"#ff6b6b22":"#E4EBF2"}` }}>
-                  <div style={{ display:"flex",alignItems:"center",gap:12,marginBottom: (txn.status==="completed"&&!alreadyRated)||canDispute ? 10 : 0 }}>
-                    <div style={{ width:42,height:42,borderRadius:12,background:isBuyer?"#fff0f0":"#f0fff8",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0 }}>{isBuyer?"🛒":"💸"}</div>
+                  <div style={{ display:"flex",alignItems:"center",gap:12,marginBottom: showActions || tradeDisputeOpen ? 10 : 0 }}>
+                    <div style={{ width:42,height:42,borderRadius:12,background:isBuyer?"#fff0f0":"#f0fff8",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0 }}>{txn.type==="trade"?"🤝":(isBuyer?"🛒":"💸")}</div>
                     <div style={{ flex:1,minWidth:0 }}>
                       <div style={{ fontWeight:700,fontSize:13,color:"#2C3E50",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis" }}>{txn.cardName}</div>
-                      <div style={{ fontSize:10,color:"#bbb",marginTop:2 }}>{txn.date} · {isBuyer?"Purchased":"Sold"} · {txn.method}</div>
-                      <div style={{ display:"flex",gap:5,marginTop:4,alignItems:"center" }}>
+                      <div style={{ fontSize:10,color:"#bbb",marginTop:2 }}>{txn.date} · {txn.type==="trade"?"Trade":(isBuyer?"Purchased":"Sold")} · {txn.method}</div>
+                      <div style={{ display:"flex",gap:5,marginTop:4,alignItems:"center",flexWrap:"wrap" }}>
                         <span style={{ fontSize:9,background:`${statusColor}18`,color:statusColor,borderRadius:5,padding:"1px 7px",fontWeight:700 }}>{txn.status}</span>
                         {alreadyRated && <span style={{ fontSize:9,background:"#fff8e6",color:"#f9ca24",borderRadius:5,padding:"1px 7px",fontWeight:700 }}>⭐ Rated</span>}
                         {txn.status==="disputed" && <span style={{ fontSize:9,background:"#fff0f0",color:"#ff6b6b",borderRadius:5,padding:"1px 7px",fontWeight:700 }}>🔒 Escrow frozen</span>}
+                        {tradeDisputeOpen && <span style={{ fontSize:9,background:"#fff0f0",color:"#ff6b6b",borderRadius:5,padding:"1px 7px",fontWeight:700 }}>🤝 Trade dispute open</span>}
                       </div>
                     </div>
                     <div style={{ textAlign:"right",flexShrink:0 }}>
@@ -4666,7 +4725,7 @@ function AppShell({ onSignOut, authUser }) {
                     </div>
                   </div>
                   {/* Action buttons */}
-                  {((txn.status==="completed" && !alreadyRated && otherUser) || canDispute) && (
+                  {showActions && (
                     <div style={{ display:"flex",gap:8,paddingTop:10,borderTop:"1px solid #EEF2F7" }}>
                       {txn.status==="completed" && !alreadyRated && otherUser && (
                         <button onClick={()=>setRatingModal({ txn, otherUser, isBuyer })} style={{ flex:1,background:"linear-gradient(135deg,#f9ca24,#f0932b)",border:"none",borderRadius:10,padding:"8px",fontWeight:800,fontSize:12,color:"#fff",cursor:"pointer" }}>
@@ -4674,8 +4733,13 @@ function AppShell({ onSignOut, authUser }) {
                         </button>
                       )}
                       {canDispute && (
-                        <button onClick={()=>setDisputeModal({ txn, shipment })} style={{ flex:1,background:"#fff0f0",border:"2px solid #ff6b6b",borderRadius:10,padding:"8px",fontWeight:700,fontSize:12,color:"#ff6b6b",cursor:"pointer" }}>
+                        <button onClick={()=>setDisputeModal({ txn, shipment, disputeKind:"purchase" })} style={{ flex:1,background:"#fff0f0",border:"2px solid #ff6b6b",borderRadius:10,padding:"8px",fontWeight:700,fontSize:12,color:"#ff6b6b",cursor:"pointer" }}>
                           🚨 Report Problem
+                        </button>
+                      )}
+                      {canTradeDispute && (
+                        <button type="button" onClick={()=>setDisputeModal({ txn, shipment: null, disputeKind:"trade" })} style={{ flex:1,background:"#EAF1FA",border:"2px solid #3A7BD5",borderRadius:10,padding:"8px",fontWeight:700,fontSize:12,color:"#3A7BD5",cursor:"pointer" }}>
+                          🤝 Trade issue
                         </button>
                       )}
                     </div>
@@ -5034,11 +5098,15 @@ function AppShell({ onSignOut, authUser }) {
                   const against = getUser(d.againstUserId);
                   const statusColor = d.status==="open"?"#ff6b6b":d.status==="resolved"?"#00b894":"#f9ca24";
                   const reasonLabel = DISPUTE_REASONS?.find(r=>r.id===d.reason)?.label || d.reason;
+                  const kind = d.disputeType === "trade" ? "trade" : "purchase";
                   return (
                     <div key={d.id} style={{ background:"#fff",borderRadius:16,padding:"14px",boxShadow:"0 2px 10px rgba(0,0,0,0.05)",border:`1px solid ${statusColor}22`,marginBottom:10 }}>
-                      <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8 }}>
+                      <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8,gap:8,flexWrap:"wrap" }}>
                         <div style={{ fontWeight:800,fontSize:13,color:"#2C3E50",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{d.figureName}</div>
-                        <span style={{ fontSize:9,background:`${statusColor}18`,color:statusColor,borderRadius:6,padding:"2px 8px",fontWeight:800,flexShrink:0,marginLeft:8 }}>{d.status.toUpperCase()}</span>
+                        <div style={{ display:"flex",alignItems:"center",gap:6,flexShrink:0 }}>
+                          <span style={{ fontSize:8,fontWeight:800,background:kind==="trade"?"#EAF1FA":"#f0fff8",color:kind==="trade"?"#3A7BD5":"#00b894",borderRadius:6,padding:"2px 8px",textTransform:"uppercase" }}>{kind}</span>
+                          <span style={{ fontSize:9,background:`${statusColor}18`,color:statusColor,borderRadius:6,padding:"2px 8px",fontWeight:800 }}>{d.status.toUpperCase()}</span>
+                        </div>
                       </div>
                       <div style={{ fontSize:11,color:"#555",marginBottom:6 }}><strong>{reasonLabel}</strong></div>
                       <div style={{ fontSize:11,color:"#aaa",marginBottom:10,lineHeight:1.4 }}>{d.detail}</div>
@@ -5054,12 +5122,12 @@ function AppShell({ onSignOut, authUser }) {
                             <div style={{ background:"#fff8e6",border:"1.5px solid #f9ca24",borderRadius:10,padding:"10px 12px",marginBottom:4 }}>
                               <div style={{ fontWeight:700,fontSize:11,color:"#f0932b",marginBottom:4 }}>💔 Damage Claim Protocol</div>
                               <div style={{ fontSize:10,color:"#888",lineHeight:1.5,marginBottom:6 }}>1. Ask buyer to submit photos of figure + packaging + label<br/>2. Confirm damage is transit-related (not pre-existing)<br/>3. Seller files USPS claim at <strong>usps.com/help/claims.htm</strong><br/>4. USPS reimburses seller within 5–10 business days</div>
-                              <button onClick={()=>{ setDb(db=>({...db, disputes:db.disputes.map(x=>x.id===d.id?{...x,status:"resolved",resolution:"usps_claim",resolvedAt:new Date().toISOString().split("T")[0],adminNote:"USPS insurance claim initiated. Buyer keeps item. Seller files claim at usps.com/help/claims.htm."}:x), transactions:db.transactions.map(t=>t.id===d.txnId?{...t,status:"completed"}:t), shipments:db.shipments.map(s=>s.id===d.shipmentId?{...s,disputeFrozen:false,fundsReleased:true}:s) })); notify("📮 USPS claim resolution applied — seller files claim"); }} style={{ width:"100%",background:"#fff8e6",border:"2px solid #f9ca24",borderRadius:8,padding:"7px",fontWeight:700,fontSize:11,color:"#f0932b",cursor:"pointer" }}>📮 Resolve: USPS Insurance Claim</button>
+                              <button onClick={()=>{ setDb(db=>({...db, disputes:db.disputes.map(x=>x.id===d.id?{...x,status:"resolved",resolution:"usps_claim",resolvedAt:new Date().toISOString().split("T")[0],adminNote:"USPS insurance claim initiated. Buyer keeps item. Seller files claim at usps.com/help/claims.htm."}:x), transactions:db.transactions.map(t=>t.id===d.txnId?{...t,status:"completed"}:t), shipments:d.shipmentId?db.shipments.map(s=>s.id===d.shipmentId?{...s,disputeFrozen:false,fundsReleased:true}:s):db.shipments })); notify("📮 USPS claim resolution applied — seller files claim"); }} style={{ width:"100%",background:"#fff8e6",border:"2px solid #f9ca24",borderRadius:8,padding:"7px",fontWeight:700,fontSize:11,color:"#f0932b",cursor:"pointer" }}>📮 Resolve: USPS Insurance Claim</button>
                             </div>
                           )}
                           <div style={{ display:"flex",gap:6 }}>
-                            <button onClick={()=>{ setDb(db=>({...db, disputes:db.disputes.map(x=>x.id===d.id?{...x,status:"resolved",resolution:"refund_full",resolvedAt:new Date().toISOString().split("T")[0],adminNote:"Full refund issued by admin."}:x), transactions:db.transactions.map(t=>t.id===d.txnId?{...t,status:"refunded"}:t), shipments:db.shipments.map(s=>s.id===d.shipmentId?{...s,disputeFrozen:false}:s) })); notify("✅ Dispute resolved — full refund issued"); }} style={{ flex:1,background:"#f0fff8",border:"2px solid #00b894",borderRadius:10,padding:"7px",fontWeight:700,fontSize:11,color:"#00b894",cursor:"pointer" }}>✅ Full Refund</button>
-                            <button onClick={()=>{ setDb(db=>({...db, disputes:db.disputes.map(x=>x.id===d.id?{...x,status:"resolved",resolution:"no_action",resolvedAt:new Date().toISOString().split("T")[0],adminNote:"Dispute rejected — funds released to seller."}:x), shipments:db.shipments.map(s=>s.id===d.shipmentId?{...s,disputeFrozen:false,fundsReleased:true}:s), transactions:db.transactions.map(t=>t.id===d.txnId?{...t,status:"completed"}:t) })); notify("Dispute closed — funds released to seller"); }} style={{ flex:1,background:"#fff0f0",border:"2px solid #ff6b6b",borderRadius:10,padding:"7px",fontWeight:700,fontSize:11,color:"#ff6b6b",cursor:"pointer" }}>❌ Reject</button>
+                            <button onClick={()=>{ setDb(db=>({...db, disputes:db.disputes.map(x=>x.id===d.id?{...x,status:"resolved",resolution:"refund_full",resolvedAt:new Date().toISOString().split("T")[0],adminNote:"Full refund issued by admin."}:x), transactions:db.transactions.map(t=>t.id===d.txnId?{...t,status:"refunded"}:t), shipments:d.shipmentId?db.shipments.map(s=>s.id===d.shipmentId?{...s,disputeFrozen:false}:s):db.shipments })); notify("✅ Dispute resolved — full refund issued"); }} style={{ flex:1,background:"#f0fff8",border:"2px solid #00b894",borderRadius:10,padding:"7px",fontWeight:700,fontSize:11,color:"#00b894",cursor:"pointer" }}>✅ Full Refund</button>
+                            <button onClick={()=>{ setDb(db=>({...db, disputes:db.disputes.map(x=>x.id===d.id?{...x,status:"resolved",resolution:"no_action",resolvedAt:new Date().toISOString().split("T")[0],adminNote:"Dispute rejected — funds released to seller."}:x), shipments:d.shipmentId?db.shipments.map(s=>s.id===d.shipmentId?{...s,disputeFrozen:false,fundsReleased:true}:s):db.shipments, transactions:db.transactions.map(t=>t.id===d.txnId?{...t,status:"completed"}:t) })); notify("Dispute closed — funds released to seller"); }} style={{ flex:1,background:"#fff0f0",border:"2px solid #ff6b6b",borderRadius:10,padding:"7px",fontWeight:700,fontSize:11,color:"#ff6b6b",cursor:"pointer" }}>❌ Reject</button>
                           </div>
                         </div>
                       )}
