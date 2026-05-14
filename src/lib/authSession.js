@@ -6,6 +6,7 @@ function profileFromRow(row) {
     id: row.id,
     username: row.username,
     avatar: row.avatar,
+    verified: !!row.verified,
   };
 }
 
@@ -14,7 +15,7 @@ export async function ensureUserProfile(user) {
 
   const { data: existing, error: readError } = await supabase
     .from("users")
-    .select("id, username, avatar")
+    .select("id, username, avatar, verified")
     .eq("id", user.id)
     .maybeSingle();
 

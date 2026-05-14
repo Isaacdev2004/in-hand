@@ -16,6 +16,7 @@ function toListingRow(card) {
     wants_trade: !!card.wantsTrade,
     wants_buy: !!card.wantsBuy,
     listed_at: card.listedAt || null,
+    video_url: card.videoUrl || null,
   };
 }
 
@@ -40,6 +41,7 @@ export async function updateListing(cardId, patch) {
   if (patch.wantsTrade !== undefined) row.wants_trade = !!patch.wantsTrade;
   if (patch.wantsBuy !== undefined) row.wants_buy = !!patch.wantsBuy;
   if (patch.listedAt !== undefined) row.listed_at = patch.listedAt;
+  if (patch.videoUrl !== undefined) row.video_url = patch.videoUrl || null;
   return supabase.from("listings").update(row).eq("id", cardId);
 }
 

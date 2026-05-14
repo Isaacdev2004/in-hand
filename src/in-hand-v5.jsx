@@ -32,9 +32,11 @@ import {
   stripToastEmoji,
   UI_FONT,
   UserAvatar,
+  VerifiedInHandBadge,
+  getListingVideoEmbed,
 } from "./lib/mobileUi";
 
-const LOGO_IMG = 'data:image/jpeg;base64,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';
+const LOGO_IMG = (process.env.PUBLIC_URL || "") + "/in-hand-logo.png";
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const LINE_COLOR = {
   "G.I. Joe":            { from: "#ff6b6b", to: "#ee5a24", light: "#fff0f0" },
@@ -250,17 +252,17 @@ function MarketValueModal({ card, onClose }) {
 
 // ─── SEED DATA ────────────────────────────────────────────────────────────────
 const SEED_USERS = [
-  { id: "u1", username: "VinylHunter_Rex",  avatar: "🦖", rating: 4.9, tradesCompleted: 47, joined: "2021-03-12", location: "New York, NY",    wishlist: ["G.I. Joe","vintage","hasbro"],    walletBalance: 1250.00, paymentMethods: [{ id:"pm1", type:"card", last4:"4242", brand:"Visa",       expiry:"12/26", isDefault:true  }, { id:"pm2", type:"card", last4:"5555", brand:"Mastercard", expiry:"09/25", isDefault:false }],
+  { id: "u1", username: "VinylHunter_Rex",  avatar: "🦖", rating: 4.9, tradesCompleted: 47, joined: "2021-03-12", location: "New York, NY", verified: true, wishlist: ["G.I. Joe","vintage","hasbro"],    walletBalance: 1250.00, paymentMethods: [{ id:"pm1", type:"card", last4:"4242", brand:"Visa",       expiry:"12/26", isDefault:true  }, { id:"pm2", type:"card", last4:"5555", brand:"Mastercard", expiry:"09/25", isDefault:false }],
     addresses: [
       { id:"a1", label:"Home",  name:"Rex Hunter", street:"247 W 35th St", city:"New York",  state:"NY", zip:"10001", isDefault:true  },
       { id:"a2", label:"Work",  name:"Rex Hunter", street:"1 Penn Plaza",  city:"New York",  state:"NY", zip:"10119", isDefault:false },
     ]
   },
   { id: "u2", username: "RetroPlastic_Joe", avatar: "🎖️", rating: 4.7, tradesCompleted: 23, joined: "2022-01-05", location: "Chicago, IL",     wishlist: ["military","vintage"],             walletBalance: 340.00,  paymentMethods: [{ id:"pm3", type:"card", last4:"1234", brand:"Visa",       expiry:"03/27", isDefault:true  }] },
-  { id: "u3", username: "BotCollector88",   avatar: "🤖", rating: 5.0, tradesCompleted: 61, joined: "2020-08-19", location: "Austin, TX",      wishlist: ["transformers","boxed"],           walletBalance: 820.00,  paymentMethods: [{ id:"pm4", type:"paypal", email:"bot88@email.com",      isDefault:true  }] },
+  { id: "u3", username: "BotCollector88",   avatar: "🤖", rating: 5.0, tradesCompleted: 61, joined: "2020-08-19", location: "Austin, TX", verified: true, wishlist: ["transformers","boxed"],           walletBalance: 820.00,  paymentMethods: [{ id:"pm4", type:"paypal", email:"bot88@email.com",      isDefault:true  }] },
   { id: "u4", username: "KastleGrayskull",  avatar: "🏰", rating: 4.8, tradesCompleted: 34, joined: "2021-11-30", location: "Los Angeles, CA", wishlist: ["motu","fantasy"],                 walletBalance: 95.50,   paymentMethods: [] },
   { id: "u5", username: "DarkSideDave",     avatar: "🌌", rating: 4.6, tradesCompleted: 18, joined: "2023-02-14", location: "Seattle, WA",     wishlist: ["starwars","kenner"],              walletBalance: 2100.00, paymentMethods: [{ id:"pm5", type:"card", last4:"9999", brand:"Amex",       expiry:"07/28", isDefault:true  }] },
-  { id: "u6", username: "ShellShocked_NY",  avatar: "🐢", rating: 4.9, tradesCompleted: 55, joined: "2020-06-01", location: "Brooklyn, NY",    wishlist: ["tmnt","playmates"],               walletBalance: 560.00,  paymentMethods: [{ id:"pm6", type:"card", last4:"7777", brand:"Visa",       expiry:"11/26", isDefault:true  }] },
+  { id: "u6", username: "ShellShocked_NY",  avatar: "🐢", rating: 4.9, tradesCompleted: 55, joined: "2020-06-01", location: "Brooklyn, NY", verified: true, wishlist: ["tmnt","playmates"],               walletBalance: 560.00,  paymentMethods: [{ id:"pm6", type:"card", last4:"7777", brand:"Visa",       expiry:"11/26", isDefault:true  }] },
   { id: "u7", username: "EvilLair_99",      avatar: "💀", rating: 4.5, tradesCompleted: 12, joined: "2023-07-22", location: "Denver, CO",      wishlist: ["villain","motu"],                 walletBalance: 75.00,   paymentMethods: [] },
   { id: "u8", username: "CybertronVault",   avatar: "⚙️", rating: 4.8, tradesCompleted: 41, joined: "2021-05-10", location: "Detroit, MI",     wishlist: ["transformers","decepticon"],      walletBalance: 430.00,  paymentMethods: [{ id:"pm7", type:"paypal", email:"cybert@vault.com",     isDefault:true  }] },
   { id: "u9", username: "NinjaArsenal",     avatar: "🥷", rating: 5.0, tradesCompleted: 29, joined: "2022-09-03", location: "Portland, OR",    wishlist: ["ninja","hasbro"],                 walletBalance: 190.00,  paymentMethods: [{ id:"pm8", type:"card", last4:"3344", brand:"Mastercard", expiry:"05/27", isDefault:true  }] },
@@ -269,7 +271,7 @@ const SEED_USERS = [
 
 const SEED_CARDS = [
   { id:"c1",  ownerId:"u2",  name:"Snake Eyes (1982 O-Ring)",  brand:"Hasbro",    line:"G.I. Joe",           isNew:false, value:220,  image:"🥷", tags:["vintage","hasbro","military"],     wantsTrade:true,  wantsBuy:false, listedAt:"2024-11-01" },
-  { id:"c2",  ownerId:"u3",  name:"Optimus Prime G1 Boxed",    brand:"Hasbro",    line:"Transformers",        isNew:true,  value:580,  image:"🤖", tags:["vintage","transformers","boxed"],   wantsTrade:true,  wantsBuy:true,  listedAt:"2024-10-28" },
+  { id:"c2",  ownerId:"u3",  name:"Optimus Prime G1 Boxed",    brand:"Hasbro",    line:"Transformers",        isNew:true,  value:580,  image:"🤖", tags:["vintage","transformers","boxed"],   wantsTrade:true,  wantsBuy:true,  listedAt:"2024-10-28", videoUrl:"https://www.youtube.com/watch?v=jNQXAC9IVRw" },
   { id:"c3",  ownerId:"u4",  name:"He-Man MOTU (1982)",        brand:"Mattel",    line:"Masters of Universe", isNew:false, value:95,   image:"⚔️", tags:["vintage","fantasy","motu"],         wantsTrade:true,  wantsBuy:true,  listedAt:"2024-11-05" },
   { id:"c4",  ownerId:"u5",  name:"Darth Vader (12-back)",     brand:"Kenner",    line:"Star Wars (Vintage)", isNew:true,  value:1200, image:"🌑", tags:["starwars","vintage","kenner"],      wantsTrade:true,  wantsBuy:false, listedAt:"2024-10-15" },
   { id:"c5",  ownerId:"u6",  name:"Leonardo '88",              brand:"Playmates", line:"TMNT",                isNew:false, value:310,  image:"🐢", tags:["tmnt","vintage","playmates"],       wantsTrade:true,  wantsBuy:true,  listedAt:"2024-11-08" },
@@ -437,7 +439,7 @@ function CyclingSubtitle() {
 // ─── SHARED STYLES ────────────────────────────────────────────────────────────
 const IS = { background:"#fff", border:"1px solid #d8e0ea", borderRadius:14, padding:"12px 14px", fontSize:14, fontFamily:UI_FONT, fontWeight:500, color:"#15202b", width:"100%", outline:"none" };
 const TS = (on) => ({ flex:1, background:on?"#2C3E50":"#E4EBF2", border:"none", borderRadius:10, padding:"9px", textAlign:"center", fontSize:12, fontWeight:700, color:on?"#fff":"#aaa", cursor:"pointer", transition:"all 0.15s" });
-const Btn = ({children, onClick, style={}}) => <button onClick={onClick} style={{ border:"none", borderRadius:12, padding:"12px", fontWeight:700, fontSize:14, cursor:"pointer", fontFamily:UI_FONT, ...style }}>{children}</button>;
+const Btn = ({ children, onClick, style = {}, type = "button" }) => <button type={type} onClick={onClick} style={{ border:"none", borderRadius:12, padding:"12px", fontWeight:700, fontSize:14, cursor:"pointer", fontFamily:UI_FONT, ...style }}>{children}</button>;
 
 // ─── CHECKOUT MODAL ───────────────────────────────────────────────────────────
 function CheckoutModal({ card, seller, myUser, onConfirm, onClose }) {
@@ -1032,7 +1034,7 @@ function PhotoViewer({ photos, startIdx = 0, onClose }) {
 
 // ─── ADD CARD MODAL ───────────────────────────────────────────────────────────
 function AddCardModal({ onSave, onClose, ownerId }) {
-  const [form, setForm] = useState({ name:"", brand:"Hasbro", line:"G.I. Joe", isNew:true, value:"", image:"🥷", photos:[], tags:"", description:"", wantsTrade:true, wantsBuy:false });
+  const [form, setForm] = useState({ name:"", brand:"Hasbro", line:"G.I. Joe", isNew:true, value:"", image:"🥷", photos:[], tags:"", description:"", videoUrl:"", wantsTrade:true, wantsBuy:false });
   const set = (k,v) => setForm(f => {
     const updated = {...f, [k]:v};
     if (k === "brand") updated.line = getLinesForBrand(v)[0] || "";
@@ -1116,12 +1118,17 @@ function AddCardModal({ onSave, onClose, ownerId }) {
           )}
           <input value={form.tags} onChange={e=>set("tags",e.target.value)} placeholder="Tags (vintage, hasbro, …)" style={IS} />
           <textarea value={form.description||""} onChange={e=>set("description",e.target.value)} placeholder="Description — condition details, accessories included, any flaws… (optional)" rows={3} style={{...IS, resize:"none", lineHeight:1.5}} />
+          <div>
+            <div style={{ fontSize:10,fontWeight:700,color:"#aaa",marginBottom:5,letterSpacing:0.8 }}>SHORT VIDEO (OPTIONAL)</div>
+            <input value={form.videoUrl} onChange={e=>set("videoUrl",e.target.value)} placeholder="YouTube, Vimeo, or direct .mp4 / .webm link" style={IS} />
+            <div style={{ fontSize:10,color:"#bbb",marginTop:4 }}>Shown as a play button on your listing. Keep clips short.</div>
+          </div>
           <div style={{ display:"flex", gap:10 }}>
             <label style={TS(form.wantsTrade)} onClick={()=>set("wantsTrade",!form.wantsTrade)}>⇄ Trade</label>
             <label style={TS(form.wantsBuy)} onClick={()=>set("wantsBuy",!form.wantsBuy)}>💰 For Sale</label>
           </div>
         </div>
-        <Btn onClick={()=>{ if(!form.name||!form.value) return; onSave({...form, value:parseInt(form.value), tags:form.tags.split(",").map(t=>t.trim().toLowerCase()).filter(Boolean), id:"c"+Date.now(), ownerId: ownerId, listedAt:new Date().toISOString().split("T")[0]}); onClose(); }} style={{ background:"#2C3E50", color:"#fff", width:"100%", marginTop:16 }}>Save Figure</Btn>
+        <Btn onClick={()=>{ if(!form.name||!form.value) return; onSave({...form, value:parseInt(form.value), tags:form.tags.split(",").map(t=>t.trim().toLowerCase()).filter(Boolean), id:"c"+Date.now(), ownerId: ownerId, listedAt:new Date().toISOString().split("T")[0], videoUrl:(form.videoUrl||"").trim()}); onClose(); }} style={{ background:"#2C3E50", color:"#fff", width:"100%", marginTop:16 }}>Save Figure</Btn>
       </div>
     </div>
   );
@@ -1154,10 +1161,11 @@ function AddUserModal({ onSave, onClose }) {
 }
 
 // ─── FIGURE IMAGE ─────────────────────────────────────────────────────────────
-// Shows real photo if available, falls back to emoji
-function FigureImage({ card, size=62, borderRadius=16, onClick, style={} }) {
+// Shows real photo if available, falls back to emoji; optional short video (YouTube / Vimeo / mp4)
+function FigureImage({ card, size=62, borderRadius=16, onClick, onVideoOpen, style={} }) {
   const { light } = lc(card.line);
   const hasPhotos = card.photos?.length > 0;
+  const videoEmb = card.videoUrl ? getListingVideoEmbed(card.videoUrl) : null;
   return (
     <div onClick={onClick} style={{ width:size, height:size, borderRadius, background:light, flexShrink:0, overflow:"hidden", cursor:onClick?"pointer":"default", position:"relative", ...style }}>
       {hasPhotos
@@ -1167,12 +1175,22 @@ function FigureImage({ card, size=62, borderRadius=16, onClick, style={} }) {
       {hasPhotos && card.photos.length > 1 && (
         <div style={{ position:"absolute", bottom:4, right:4, background:"rgba(0,0,0,0.6)", borderRadius:6, fontSize:9, color:"#fff", padding:"1px 5px", fontWeight:700 }}>+{card.photos.length-1}</div>
       )}
+      {videoEmb && (
+        <button
+          type="button"
+          aria-label="Play short listing video"
+          onClick={(e) => { e.stopPropagation(); onVideoOpen?.(); }}
+          style={{ position:"absolute", top:4, left:4, width:26, height:26, borderRadius:"50%", border:"none", background:"rgba(0,0,0,0.68)", color:"#fff", fontSize:10, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", paddingLeft:2, boxShadow:"0 2px 8px rgba(0,0,0,0.25)" }}
+        >
+          ▶
+        </button>
+      )}
     </div>
   );
 }
 
 // ─── SWIPE CARD ───────────────────────────────────────────────────────────────
-function SwipeCard({ card, owner, matchScore, onSwipe, isTop, stackIndex }) {
+function SwipeCard({ card, owner, matchScore, onSwipe, isTop, stackIndex, onOpenVideo }) {
   const [drag, setDrag] = useState({ x:0, y:0, dragging:false }); const [decision, setDecision] = useState(null); const startRef = useRef(null);
   const hs = (x,y) => { startRef.current={x,y}; setDrag(d=>({...d,dragging:true})); };
   const hm = (x,y) => { if(!drag.dragging||!startRef.current) return; const dx=x-startRef.current.x,dy=y-startRef.current.y; setDrag({x:dx,y:dy,dragging:true}); setDecision(dx>60?"yes":dx<-60?"no":null); };
@@ -1190,9 +1208,23 @@ function SwipeCard({ card, owner, matchScore, onSwipe, isTop, stackIndex }) {
             {card.photos.length > 1 && <div style={{ position:"absolute", bottom:10, left:"50%", transform:"translateX(-50%)", display:"flex", gap:5 }}>{card.photos.map((_,i)=><div key={i} style={{ width:6,height:6,borderRadius:"50%",background:i===0?"#fff":"rgba(255,255,255,0.5)" }} />)}</div>}
             <div style={{ position:"absolute", bottom:0, left:0, right:0, height:60, background:"linear-gradient(transparent,rgba(0,0,0,0.3))" }} />
             <div style={{ position:"absolute", top:10, left:"50%", transform:"translateX(-50%)", background:"rgba(255,255,255,0.2)", borderRadius:10, padding:"3px 12px", fontSize:10, color:"#fff", fontWeight:700, letterSpacing:1.2, backdropFilter:"blur(8px)" }}>{card.line.toUpperCase()}</div>
+            {isTop && getListingVideoEmbed(card.videoUrl) && (
+              <button
+                type="button"
+                aria-label="Play listing video"
+                onClick={(e) => { e.stopPropagation(); onOpenVideo?.(); }}
+                style={{ position:"absolute", bottom:12, right:12, width:44, height:44, borderRadius:"50%", border:"none", background:"rgba(0,0,0,0.55)", color:"#fff", fontSize:18, cursor:"pointer", boxShadow:"0 4px 16px rgba(0,0,0,0.35)" }}
+              >
+                ▶
+              </button>
+            )}
           </div>
         ) : (
-          <div style={{ padding:"32px 24px 16px", textAlign:"center" }}><div style={{ fontSize:100,lineHeight:1,filter:"drop-shadow(0 8px 24px rgba(0,0,0,0.2))",marginBottom:10 }}>{card.image}</div><div style={{ background:"rgba(255,255,255,0.2)",borderRadius:10,display:"inline-block",padding:"3px 12px",fontSize:10,color:"#fff",fontWeight:700,letterSpacing:1.2 }}>{card.line.toUpperCase()}</div></div>
+          <div style={{ padding:"32px 24px 16px", textAlign:"center", position:"relative" }}><div style={{ fontSize:100,lineHeight:1,filter:"drop-shadow(0 8px 24px rgba(0,0,0,0.2))",marginBottom:10 }}>{card.image}</div><div style={{ background:"rgba(255,255,255,0.2)",borderRadius:10,display:"inline-block",padding:"3px 12px",fontSize:10,color:"#fff",fontWeight:700,letterSpacing:1.2 }}>{card.line.toUpperCase()}</div>
+            {isTop && getListingVideoEmbed(card.videoUrl) && (
+              <button type="button" aria-label="Play listing video" onClick={(e) => { e.stopPropagation(); onOpenVideo?.(); }} style={{ position:"absolute", bottom:16, right:16, width:44, height:44, borderRadius:"50%", border:"none", background:"rgba(0,0,0,0.55)", color:"#fff", fontSize:18, cursor:"pointer" }}>▶</button>
+            )}
+          </div>
         )}
         <div style={{ background:"rgba(255,255,255,0.96)", borderRadius:"20px 20px 26px 26px", padding:"18px 20px 24px" }}>
           <div style={{ display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:12 }}>
@@ -1214,7 +1246,13 @@ function SwipeCard({ card, owner, matchScore, onSwipe, isTop, stackIndex }) {
           )}
           <div style={{ display:"flex",alignItems:"center",gap:10,background:"#f7f7ff",borderRadius:12,padding:"9px 12px" }}>
             <span style={{ fontSize:24 }}>{owner.avatar}</span>
-            <div><div style={{ fontWeight:800,fontSize:12,color:"#2C3E50" }}>{owner.username}</div><div style={{ fontSize:10,color:"#bbb" }}>⭐ {owner.rating} · {owner.tradesCompleted} trades · {owner.location}</div></div>
+            <div style={{ minWidth:0 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
+                <span style={{ fontWeight:800,fontSize:12,color:"#2C3E50" }}>{owner.username}</span>
+                {owner.verified && <VerifiedInHandBadge compact />}
+              </div>
+              <div style={{ fontSize:10,color:"#bbb" }}>⭐ {owner.rating} · {owner.tradesCompleted} trades · {owner.location}</div>
+            </div>
             <div style={{ marginLeft:"auto",display:"flex",gap:5 }}>{card.wantsTrade&&<span style={{ fontSize:9,background:"#e8fff6",color:"#00b894",borderRadius:6,padding:"2px 7px",fontWeight:700 }}>TRADE</span>}{card.wantsBuy&&<span style={{ fontSize:9,background:"#fff8e6",color:"#f9ca24",borderRadius:6,padding:"2px 7px",fontWeight:700 }}>BUY</span>}</div>
           </div>
         </div>
@@ -2042,8 +2080,11 @@ function MessagingScreen({ threads, activeThreadId, setActiveThread, currentUser
               {isUnread && <div style={{ position:"absolute", top:-2, right:-2, width:12, height:12, background:"#4A90D9", borderRadius:"50%", border:"2px solid #fff" }} />}
             </div>
             <div style={{ flex:1, minWidth:0 }}>
-              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:3 }}>
-                <div style={{ fontWeight:800, fontSize:14, color:"#2C3E50" }}>{other?.username}</div>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:3, gap:8, flexWrap:"wrap" }}>
+                <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
+                  <div style={{ fontWeight:800, fontSize:14, color:"#2C3E50" }}>{other?.username}</div>
+                  {other?.verified && <VerifiedInHandBadge compact />}
+                </div>
                 <div style={{ fontSize:10, color:"#ccc" }}>{lastMsg?.ts?.slice(5,16) || ""}</div>
               </div>
               {th.cardName && (
@@ -2076,7 +2117,10 @@ function MessagingScreen({ threads, activeThreadId, setActiveThread, currentUser
         <button onClick={() => { setActiveThread(null); setBlocked(null); }} style={{ background:"#E4EBF2", border:"none", borderRadius:10, padding:"6px 10px", fontWeight:700, fontSize:13, color:"#555", cursor:"pointer" }}>←</button>
         <div style={{ width:38, height:38, borderRadius:"50%", background:"#E4EBF2", display:"flex", alignItems:"center", justifyContent:"center", fontSize:22 }}>{other?.avatar}</div>
         <div style={{ flex:1 }}>
-          <div style={{ fontWeight:800, fontSize:14, color:"#2C3E50" }}>{other?.username}</div>
+          <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
+            <div style={{ fontWeight:800, fontSize:14, color:"#2C3E50" }}>{other?.username}</div>
+            {other?.verified && <VerifiedInHandBadge compact />}
+          </div>
           <div style={{ fontSize:10, color:"#aaa" }}>⭐ {other?.rating} · {other?.tradesCompleted} trades</div>
         </div>
         {thread?.cardImage && (
@@ -2395,8 +2439,8 @@ function EmailTemplatePreview({ template }) {
       case "footer": return (
         <div key={i} style={{ borderTop:"1px solid #E4EBF2", paddingTop:16, textAlign:"center" }}>
           <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:8, marginBottom:8 }}>
-            <div style={{ width:28, height:28, borderRadius:8, overflow:"hidden" }}>
-              <img src={LOGO_IMG} alt="In Hand" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+            <div style={{ width:28, height:28, borderRadius:8, overflow:"hidden", background:"#1a1d21" }}>
+              <img src={LOGO_IMG} alt="In Hand" style={{ width:"100%", height:"100%", objectFit:"contain" }} />
             </div>
             <span style={{ fontWeight:900, fontSize:15, color:"#2C3E50" }}>In <span style={{ color:"#3A7BD5" }}>Hand</span></span>
           </div>
@@ -2427,8 +2471,8 @@ function EmailTemplatePreview({ template }) {
         {/* Email header */}
         <div style={{ background:"#2C3E50", padding:"20px", textAlign:"center" }}>
           <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:10 }}>
-            <div style={{ width:32, height:32, borderRadius:8, overflow:"hidden" }}>
-              <img src={LOGO_IMG} alt="In Hand" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+            <div style={{ width:32, height:32, borderRadius:8, overflow:"hidden", background:"#1a1d21" }}>
+              <img src={LOGO_IMG} alt="In Hand" style={{ width:"100%", height:"100%", objectFit:"contain" }} />
             </div>
             <span style={{ fontWeight:900, fontSize:18, color:"#fff" }}>In <span style={{ color:"#3A7BD5" }}>Hand</span></span>
           </div>
@@ -2606,8 +2650,8 @@ function AuthScreen({ onAuth }) {
 
       {/* Logo */}
       <div style={{ textAlign:"center", marginBottom:40, animation:"fadeUp 0.4s ease" }}>
-        <div style={{ width:110, height:110, borderRadius:28, overflow:"hidden", margin:"0 auto 16px", boxShadow:"0 8px 32px rgba(0,0,0,0.25)" }}>
-              <img src={LOGO_IMG} alt="In Hand" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+        <div style={{ width:110, height:110, borderRadius:28, overflow:"hidden", margin:"0 auto 16px", boxShadow:"0 8px 32px rgba(0,0,0,0.25)", background:"#1a1d21" }}>
+              <img src={LOGO_IMG} alt="In Hand" style={{ width:"100%", height:"100%", objectFit:"contain" }} />
             </div>
         <div style={{ fontSize:12, color:"#bbb", fontWeight:600, marginTop:4, letterSpacing:1 }}>ACTION FIGURE EXCHANGE</div>
       </div>
@@ -2751,7 +2795,7 @@ function AuthScreen({ onAuth }) {
 }
 
 // ─── SHARE MODAL ─────────────────────────────────────────────────────────────
-function ShareModal({ card, owner, onClose }) {
+function ShareModal({ card, owner, onClose, onOpenListingVideo }) {
   const [copied, setCopied] = useState(false);
   const [shared, setShared] = useState(null);
   const { from } = lc(card.line);
@@ -2793,7 +2837,7 @@ function ShareModal({ card, owner, onClose }) {
 
         {/* Listing preview */}
         <div style={{ background:"#f9f9f9",borderRadius:18,padding:"14px",marginBottom:20,display:"flex",gap:12,alignItems:"center" }}>
-          <FigureImage card={card} size={56} borderRadius={14} />
+          <FigureImage card={card} size={56} borderRadius={14} onVideoOpen={onOpenListingVideo} />
           <div style={{ flex:1,minWidth:0 }}>
             <div style={{ fontWeight:800,fontSize:14,color:"#2C3E50",lineHeight:1.2 }}>{card.name}</div>
             <div style={{ fontSize:11,color:"#aaa",marginTop:2 }}>{card.line}</div>
@@ -2802,7 +2846,15 @@ function ShareModal({ card, owner, onClose }) {
               <span style={{ fontWeight:800,fontSize:13,color:from }}>${card.value}</span>
             </div>
           </div>
-          {owner && <div style={{ textAlign:"center",flexShrink:0 }}><div style={{ fontSize:22 }}>{owner.avatar}</div><div style={{ fontSize:9,color:"#bbb",fontWeight:700,marginTop:2 }}>{owner.username.split("_")[0]}</div></div>}
+          {owner && (
+            <div style={{ textAlign:"center", flexShrink:0 }}>
+              <div style={{ fontSize:22 }}>{owner.avatar}</div>
+              <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:3, marginTop:2 }}>
+                <div style={{ fontSize:9, color:"#bbb", fontWeight:700 }}>{owner.username.split("_")[0]}</div>
+                {owner.verified && <VerifiedInHandBadge compact />}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Native share */}
@@ -2875,8 +2927,15 @@ function EditProfileModal({ user, onSave, onClose }) {
       <div style={{ background:"#fff",borderRadius:"28px 28px 0 0",padding:"24px 20px 44px",width:"100%",maxWidth:430,maxHeight:"90vh",overflowY:"auto" }}>
 
         {/* Header */}
-        <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20 }}>
-          <div style={{ fontWeight:800,fontSize:18,color:"#2C3E50" }}>Edit Account</div>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:20 }}>
+          <div>
+            <div style={{ fontWeight:800, fontSize:18, color:"#2C3E50" }}>Edit Account</div>
+            {user?.verified && (
+              <div style={{ marginTop:8 }}>
+                <VerifiedInHandBadge />
+              </div>
+            )}
+          </div>
           <button onClick={onClose} style={{ background:"#E4EBF2",border:"none",borderRadius:"50%",width:32,height:32,fontSize:16,cursor:"pointer" }}>✕</button>
         </div>
 
@@ -2894,7 +2953,10 @@ function EditProfileModal({ user, onSave, onClose }) {
             <div style={{ background:"#f9f9f9",borderRadius:16,padding:"16px",display:"flex",alignItems:"center",gap:14,marginBottom:4 }}>
               <div style={{ width:54,height:54,borderRadius:"50%",background:"#2C3E50",display:"flex",alignItems:"center",justifyContent:"center",fontSize:30,flexShrink:0 }}>{form.avatar}</div>
               <div>
-                <div style={{ fontWeight:800,fontSize:16,color:"#2C3E50" }}>{form.username||"Your name"}</div>
+                <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
+                  <div style={{ fontWeight:800,fontSize:16,color:"#2C3E50" }}>{form.username||"Your name"}</div>
+                  {user?.verified && <VerifiedInHandBadge compact />}
+                </div>
                 <div style={{ fontSize:12,color:"#aaa",marginTop:2 }}>{form.location||"Location not set"}</div>
               </div>
             </div>
@@ -3311,6 +3373,8 @@ function AppShell({ onSignOut, authUser }) {
   const [walletAction, setWalletAction] = useState(null);
   const [topupAmount, setTopupAmount] = useState("");
   const [photoViewer, setPhotoViewer] = useState(null);
+  const [listingVideoModal, setListingVideoModal] = useState(null);
+  const [vaultVideoDraft, setVaultVideoDraft] = useState("");
   const [editingPhotos, setEditingPhotos] = useState(null);
   const [shareCard, setShareCard] = useState(null);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -3469,6 +3533,15 @@ function AppShell({ onSignOut, authUser }) {
   const otherCards = db.cards.filter(c=>c.ownerId!==activeUserId);
   const myTxns = db.transactions.filter(t=>t.buyerId===activeUserId||t.sellerId===activeUserId);
 
+  useEffect(() => {
+    if (!editingPhotos) {
+      setVaultVideoDraft("");
+      return;
+    }
+    const fig = db.cards.find((c) => c.id === editingPhotos && c.ownerId === activeUserId);
+    setVaultVideoDraft(fig?.videoUrl || "");
+  }, [editingPhotos, db.cards, activeUserId]);
+
   useEffect(() => { if(myTradeable.length&&!selectedOffer) setSelectedOffer(myTradeable[0]); }, [myTradeable.length]);
   const notify = msg => { setToast(stripToastEmoji(msg)); setTimeout(()=>setToast(null),2500); };
 
@@ -3542,8 +3615,29 @@ function AppShell({ onSignOut, authUser }) {
         return;
       }
     }
+    setDb((d) => ({
+      ...d,
+      cards: d.cards.map((c) => (c.id === cardId ? { ...c, photos } : c)),
+    }));
     notify("📷 Photos saved!");
     setEditingPhotos(null);
+  };
+
+  const handleSaveListingVideo = async (cardId) => {
+    const trimmed = (vaultVideoDraft || "").trim();
+    if (supabase) {
+      const { error } = await updateListing(cardId, { videoUrl: trimmed || null });
+      if (error) {
+        console.error("In Hand: listing video URL save failed", error);
+        notify("❌ Could not save video link to Supabase");
+        return;
+      }
+    }
+    setDb((d) => ({
+      ...d,
+      cards: d.cards.map((c) => (c.id === cardId ? { ...c, videoUrl: trimmed } : c)),
+    }));
+    notify(trimmed ? "🎬 Video link saved" : "Video link cleared");
   };
 
   const handlePurchaseConfirm = async (card, { payMethod, fee, total }) => {
@@ -4054,7 +4148,21 @@ function AppShell({ onSignOut, authUser }) {
       {ratingModal && <RatingModal txn={ratingModal.txn} otherUser={ratingModal.otherUser} isBuyer={ratingModal.isBuyer} onSubmit={handleSubmitRating} onClose={()=>setRatingModal(null)} />}
       {showPackagingGuide && <PackagingGuideModal figureValue={addTrackingFor?.amount||0} onConfirm={()=>setShowPackagingGuide(false)} onClose={()=>setShowPackagingGuide(false)} />}
       {photoViewer && <PhotoViewer photos={photoViewer.photos} startIdx={photoViewer.startIdx||0} onClose={()=>setPhotoViewer(null)} />}
-      {shareCard && <ShareModal card={shareCard} owner={getUser(shareCard.ownerId)} onClose={()=>setShareCard(null)} />}
+      {listingVideoModal && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.75)", zIndex:750, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }} onClick={()=>setListingVideoModal(null)}>
+          <div style={{ background:"#111", borderRadius:16, maxWidth:560, width:"100%", overflow:"hidden", position:"relative", boxShadow:"0 20px 60px rgba(0,0,0,0.5)" }} onClick={(e)=>e.stopPropagation()}>
+            <button type="button" aria-label="Close video" onClick={()=>setListingVideoModal(null)} style={{ position:"absolute", top:10, right:10, zIndex:2, width:36, height:36, borderRadius:"50%", border:"none", background:"rgba(255,255,255,0.2)", color:"#fff", fontSize:18, cursor:"pointer" }}>✕</button>
+            {listingVideoModal.type === "iframe" ? (
+              <div style={{ position:"relative", paddingTop:"56.25%", background:"#000" }}>
+                <iframe title="Listing video" src={listingVideoModal.src} style={{ position:"absolute", inset:0, width:"100%", height:"100%", border:"none" }} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen />
+              </div>
+            ) : (
+              <video src={listingVideoModal.src} controls playsInline style={{ width:"100%", maxHeight:"70vh", display:"block" }} />
+            )}
+          </div>
+        </div>
+      )}
+      {shareCard && <ShareModal card={shareCard} owner={getUser(shareCard.ownerId)} onOpenListingVideo={() => { const e = getListingVideoEmbed(shareCard.videoUrl); if (e) setListingVideoModal(e); }} onClose={()=>setShareCard(null)} />}
       {showNotifications && <NotificationCenter notifications={myNotifications} onMarkRead={markRead} onMarkAllRead={markAllRead} onClose={()=>setShowNotifications(false)} onNavigate={tab=>setTab(tab)} />}
 
       {/* TRACKING DETAIL MODAL */}
@@ -4262,7 +4370,13 @@ function AppShell({ onSignOut, authUser }) {
                 return (
                   <div key={card.id} className="inhand-listing-card">
                     <div style={{ display:"flex",gap:12,alignItems:"center" }}>
-                      <FigureImage card={card} size={62} borderRadius={16} onClick={card.photos?.length>0?()=>setPhotoViewer({photos:card.photos,startIdx:0}):undefined} />
+                      <FigureImage
+                        card={card}
+                        size={62}
+                        borderRadius={16}
+                        onClick={card.photos?.length>0?()=>setPhotoViewer({photos:card.photos,startIdx:0}):undefined}
+                        onVideoOpen={() => { const e = getListingVideoEmbed(card.videoUrl); if (e) setListingVideoModal(e); }}
+                      />
                       <div style={{ flex:1,minWidth:0 }}>
                         <div style={{ fontWeight:800,fontSize:14,color:"#2C3E50" }}>{card.name}</div>
                         <div style={{ fontSize:11,color:"#8a97a6",marginTop:1 }}>{card.brand ? `${card.brand} · ` : ""}{card.line}</div>
@@ -4287,9 +4401,10 @@ function AppShell({ onSignOut, authUser }) {
                         <div style={{ fontSize:8,color:"#ccc",fontWeight:700,marginTop:2 }}>MATCH</div>
                       </div>
                     </div>
-                    <div style={{ display:"flex",alignItems:"center",gap:6,marginTop:10,paddingTop:10,borderTop:"1px solid #EEF2F7" }}>
+                    <div style={{ display:"flex",alignItems:"center",gap:6,marginTop:10,paddingTop:10,borderTop:"1px solid #EEF2F7", flexWrap:"wrap" }}>
                       <UserAvatar user={card.owner} size={28} style={{ borderRadius:10, fontSize:10 }} />
                       <span style={{ fontSize:11,fontWeight:700,color:"#888" }}>{card.owner?.username}</span>
+                      {card.owner?.verified && <VerifiedInHandBadge compact />}
                       <span style={{ fontSize:10,color:"#8a97a6" }}>Rating {card.owner?.rating}</span>
                       <div style={{ marginLeft:"auto",display:"flex",gap:6 }}>
                         <button type="button" onClick={() => setMarketModal(card)} className="inhand-text-button">Market</button>
@@ -4312,6 +4427,20 @@ function AppShell({ onSignOut, authUser }) {
                           : <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:52 }}>{card.image}</div>
                         }
                         {card.photos?.length>1 && <div style={{ position:"absolute", bottom:5, right:5, background:"rgba(0,0,0,0.55)", borderRadius:6, fontSize:9, color:"#fff", padding:"1px 5px", fontWeight:700 }}>+{card.photos.length-1}</div>}
+                        {getListingVideoEmbed(card.videoUrl) && (
+                          <button
+                            type="button"
+                            aria-label="Play listing video"
+                            onClick={e => {
+                              e.stopPropagation();
+                              const emb = getListingVideoEmbed(card.videoUrl);
+                              if (emb) setListingVideoModal(emb);
+                            }}
+                            style={{ position:"absolute", bottom:5, left:5, width:30, height:30, borderRadius:"50%", border:"none", background:"rgba(0,0,0,0.68)", color:"#fff", fontSize:11, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", paddingLeft:2, boxShadow:"0 2px 8px rgba(0,0,0,0.25)" }}
+                          >
+                            ▶
+                          </button>
+                        )}
                       </div>
                       <div style={{ padding:"12px" }}>
                         <div style={{ fontWeight:800,fontSize:12,color:"#2C3E50",lineHeight:1.3,marginBottom:3 }}>{card.name}</div>
@@ -4622,7 +4751,7 @@ function AppShell({ onSignOut, authUser }) {
               <div style={{ textAlign:"center",padding:"80px 20px" }}><div style={{ fontSize:52,marginBottom:14 }}>🎉</div><div style={{ fontWeight:800,fontSize:18,color:"#2C3E50",marginBottom:6 }}>All swiped!</div><button onClick={()=>setTab("browse")} style={{ background:"#2C3E50",border:"none",borderRadius:14,padding:"10px 24px",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",marginTop:8 }}>Back to Browse</button></div>
             ):(
               <div style={{ position:"relative",height:510 }}>
-                {visibleSwipeData.map((card,i)=><SwipeCard key={card.id} card={card} owner={card.owner} matchScore={card.matchScore} onSwipe={dir=>handleSwipe(dir,card.id)} isTop={i===visibleSwipeData.length-1} stackIndex={visibleSwipeData.length-1-i} />)}
+                {visibleSwipeData.map((card,i)=><SwipeCard key={card.id} card={card} owner={card.owner} matchScore={card.matchScore} onSwipe={dir=>handleSwipe(dir,card.id)} isTop={i===visibleSwipeData.length-1} stackIndex={visibleSwipeData.length-1-i} onOpenVideo={() => { const e = getListingVideoEmbed(card.videoUrl); if (e) setListingVideoModal(e); }} />)}
               </div>
             )}
           </div>
@@ -4657,9 +4786,15 @@ function AppShell({ onSignOut, authUser }) {
               <div key={card.id} style={{ background:"#fff",borderRadius:20,padding:"16px",boxShadow:"0 2px 14px rgba(0,0,0,0.06)",border:"1px solid #E4EBF2",marginBottom:12 }}>
                 {/* Their figure */}
                 <div style={{ display:"flex",gap:12,alignItems:"center",marginBottom:12 }}>
-                  <FigureImage card={card} size={58} borderRadius={14} />
+                  <FigureImage card={card} size={58} borderRadius={14} onVideoOpen={() => { const e = getListingVideoEmbed(card.videoUrl); if (e) setListingVideoModal(e); }} />
                   <div style={{ flex:1 }}><div style={{ fontWeight:800,fontSize:14,color:"#2C3E50" }}>{card.name}</div><div style={{ fontSize:11,color:"#aaa" }}>{card.line} · {condLabel(card.isNew)}</div><div style={{ fontWeight:800,fontSize:14,color:from,marginTop:3 }}>${card.value}</div></div>
-                  <div style={{ textAlign:"right" }}><div style={{ fontSize:22 }}>{card.owner?.avatar}</div><div style={{ fontSize:10,color:"#bbb",fontWeight:700 }}>{card.owner?.username}</div></div>
+                  <div style={{ textAlign:"right" }}>
+                    <div style={{ fontSize:22 }}>{card.owner?.avatar}</div>
+                    <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:4, marginTop:2 }}>
+                      <div style={{ fontSize:10,color:"#bbb",fontWeight:700 }}>{card.owner?.username}</div>
+                      {card.owner?.verified && <VerifiedInHandBadge compact />}
+                    </div>
+                  </div>
                 </div>
 
                 {/* Your offer */}
@@ -4726,6 +4861,12 @@ function AppShell({ onSignOut, authUser }) {
                     onChange={newPhotos => setDb(d=>({...d, cards:d.cards.map(c=>c.id===fig.id?{...c,photos:newPhotos}:c)}))}
                     maxPhotos={4}
                   />
+                  <div style={{ marginTop:16 }}>
+                    <div style={{ fontSize:11, fontWeight:700, color:"#555", marginBottom:6 }}>Optional short video</div>
+                    <div style={{ fontSize:10, color:"#aaa", marginBottom:8, lineHeight:1.4 }}>YouTube, Vimeo, or a direct link to an .mp4 or .webm file.</div>
+                    <input value={vaultVideoDraft} onChange={e=>setVaultVideoDraft(e.target.value)} placeholder="https://…" style={IS} />
+                    <Btn onClick={()=>handleSaveListingVideo(fig.id)} style={{ background:"#3A7BD5", color:"#fff", width:"100%", marginTop:10 }}>Save video link</Btn>
+                  </div>
                   <Btn onClick={()=>handleSaveCardPhotos(fig.id, fig.photos||[])} style={{ background:"#2C3E50",color:"#fff",width:"100%",marginTop:14 }}>Save Photos</Btn>
                 </div>
               </div>
@@ -4758,7 +4899,7 @@ function AppShell({ onSignOut, authUser }) {
           {myCards.map(fig=>{ const {from}=lc(fig.line); return (
             <div key={fig.id} style={{ background:"#fff",borderRadius:18,padding:"14px 16px",boxShadow:"0 2px 10px rgba(0,0,0,0.05)",border:"1px solid #E4EBF2",marginBottom:10,display:"flex",gap:14,alignItems:"center" }}>
               <div style={{ position:"relative", flexShrink:0 }}>
-                <FigureImage card={fig} size={56} borderRadius={14} onClick={fig.photos?.length>0?()=>setPhotoViewer({photos:fig.photos,startIdx:0}):undefined} />
+                <FigureImage card={fig} size={56} borderRadius={14} onClick={fig.photos?.length>0?()=>setPhotoViewer({photos:fig.photos,startIdx:0}):undefined} onVideoOpen={() => { const e = getListingVideoEmbed(fig.videoUrl); if (e) setListingVideoModal(e); }} />
                 {fig.wantsTrade&&<div style={{ position:"absolute",top:-4,right:-4,width:12,height:12,background:"#00b894",borderRadius:"50%",border:"2px solid #fff" }} />}
               </div>
               <div style={{ flex:1 }}>
@@ -4823,7 +4964,10 @@ function AppShell({ onSignOut, authUser }) {
                   <div style={{ display:"flex",alignItems:"center",gap:12 }}>
                     <div style={{ width:44,height:44,borderRadius:"50%",background:"#E4EBF2",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,flexShrink:0 }}>{user.avatar}</div>
                     <div style={{ flex:1,minWidth:0 }}>
-                      <div style={{ fontWeight:800,fontSize:14,color:"#2C3E50" }}>{user.username}</div>
+                      <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
+                        <div style={{ fontWeight:800,fontSize:14,color:"#2C3E50" }}>{user.username}</div>
+                        {user.verified && <VerifiedInHandBadge compact />}
+                      </div>
                       <div style={{ fontSize:10,color:"#bbb",marginTop:1 }}>{user.location} · {user.joined}</div>
                       <div style={{ display:"flex",gap:6,marginTop:4,flexWrap:"wrap" }}>
                         <span style={{ fontSize:10,background:"#fff8e6",color:"#f9ca24",borderRadius:6,padding:"1px 7px",fontWeight:700 }}>⭐ {user.rating}</span>
@@ -4848,8 +4992,8 @@ function AppShell({ onSignOut, authUser }) {
                   <div style={{ flex:1,minWidth:0 }}>
                     <div style={{ fontWeight:700,fontSize:13,color:"#2C3E50" }}>{card.name}</div>
                     <div style={{ fontSize:10,color:"#bbb" }}>{card.line} · {condLabel(card.isNew)} · <span style={{ color:from,fontWeight:800 }}>${card.value}</span></div>
-                    <div style={{ display:"flex",gap:4,marginTop:4,flexWrap:"wrap" }}>
-                      <span style={{ fontSize:9,background:"#E4EBF2",color:"#888",borderRadius:5,padding:"1px 6px",fontWeight:700 }}>{owner?.avatar} {owner?.username}</span>
+                    <div style={{ display:"flex",gap:4,marginTop:4,flexWrap:"wrap",alignItems:"center" }}>
+                      <span style={{ fontSize:9,background:"#E4EBF2",color:"#888",borderRadius:5,padding:"1px 6px",fontWeight:700, display:"inline-flex", alignItems:"center", gap:4 }}>{owner?.avatar} {owner?.username}{owner?.verified && <VerifiedInHandBadge compact />}</span>
                       {card.wantsTrade&&<span style={{ fontSize:9,background:"#e8fff6",color:"#00b894",borderRadius:5,padding:"1px 6px",fontWeight:700 }}>⇄</span>}
                       {card.wantsBuy&&<span style={{ fontSize:9,background:"#fff8e6",color:"#f0932b",borderRadius:5,padding:"1px 6px",fontWeight:700 }}>💰</span>}
                     </div>
@@ -4869,9 +5013,9 @@ function AppShell({ onSignOut, authUser }) {
                       <span style={{ fontSize:9,background:`${statusColor}18`,color:statusColor,borderRadius:5,padding:"2px 8px",fontWeight:700,flexShrink:0,marginLeft:8 }}>{txn.status}</span>
                     </div>
                     <div style={{ display:"flex",gap:8,flexWrap:"wrap",alignItems:"center" }}>
-                      <span style={{ fontSize:10,color:"#aaa" }}>{buyer?.avatar} {buyer?.username}</span>
+                      <span style={{ fontSize:10,color:"#aaa", display:"inline-flex", alignItems:"center", gap:4 }}>{buyer?.avatar} {buyer?.username}{buyer?.verified && <VerifiedInHandBadge compact />}</span>
                       <span style={{ fontSize:10,color:"#ccc" }}>→</span>
-                      <span style={{ fontSize:10,color:"#aaa" }}>{seller?.avatar} {seller?.username}</span>
+                      <span style={{ fontSize:10,color:"#aaa", display:"inline-flex", alignItems:"center", gap:4 }}>{seller?.avatar} {seller?.username}{seller?.verified && <VerifiedInHandBadge compact />}</span>
                       <span style={{ fontSize:11,fontWeight:800,color:"#2C3E50",marginLeft:"auto" }}>${txn.amount}</span>
                       <span style={{ fontSize:10,color:"#ccc" }}>{txn.date}</span>
                     </div>
@@ -5055,7 +5199,10 @@ function AppShell({ onSignOut, authUser }) {
             <div style={{ display:"flex",alignItems:"center",gap:14,marginBottom:18 }}>
               <div style={{ width:56,height:56,borderRadius:"50%",background:"rgba(255,255,255,0.1)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,border:"2px solid rgba(255,255,255,0.2)" }}>{myUser?.avatar}</div>
               <div>
-                <div style={{ fontWeight:800,fontSize:18,color:"#fff",lineHeight:1.1 }}>{myUser?.username}</div>
+                <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
+                  <div style={{ fontWeight:800,fontSize:18,color:"#fff",lineHeight:1.1 }}>{myUser?.username}</div>
+                  {myUser?.verified && <VerifiedInHandBadge compact />}
+                </div>
                 <div style={{ fontSize:11,color:"rgba(255,255,255,0.5)",marginTop:3 }}>{myUser?.location} · since {myUser?.joined}</div>
                 <div style={{ display:"flex",gap:8,marginTop:6 }}>
                   <span style={{ fontSize:10,background:"rgba(255,255,255,0.1)",color:"#ffd93d",borderRadius:6,padding:"2px 8px",fontWeight:700 }}>⭐ {myUser?.rating}</span>

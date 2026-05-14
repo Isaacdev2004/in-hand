@@ -25,6 +25,7 @@ function userFromRow(r) {
     paymentMethods: r.payment_methods || [],
     addresses: r.addresses || [],
     flagCount: r.flag_count ?? 0,
+    verified: !!r.verified,
   };
 }
 
@@ -45,6 +46,7 @@ function listingFromRow(r) {
     wantsTrade: r.wants_trade,
     wantsBuy: r.wants_buy,
     listedAt: r.listed_at,
+    videoUrl: r.video_url || "",
   };
 }
 

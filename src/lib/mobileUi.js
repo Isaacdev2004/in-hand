@@ -32,6 +32,61 @@ export function stripToastEmoji(message) {
     .trim();
 }
 
+/** YouTube / Vimeo / direct mp4 for listing short video. */
+export function getListingVideoEmbed(raw) {
+  const url = String(raw || "").trim();
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    const host = u.hostname.replace(/^www\./, "");
+    if (host === "youtu.be") {
+      const id = u.pathname.replace(/^\//, "").split("/")[0];
+      if (id) return { type: "iframe", src: `https://www.youtube.com/embed/${id}` };
+    }
+    if (host.includes("youtube.com")) {
+      const id = u.searchParams.get("v") || u.pathname.split("/").filter(Boolean).pop();
+      if (id && id.length > 4) return { type: "iframe", src: `https://www.youtube.com/embed/${id}` };
+    }
+    if (host.includes("vimeo.com")) {
+      const parts = u.pathname.split("/").filter(Boolean);
+      const id = parts[parts.length - 1];
+      if (id && /^\d+$/.test(id)) return { type: "iframe", src: `https://player.vimeo.com/video/${id}` };
+    }
+  } catch {
+    /* ignore */
+  }
+  if (/^https?:\/\/.+\.(mp4|webm)(\?.*)?$/i.test(url)) return { type: "video", src: url };
+  return null;
+}
+
+export function VerifiedInHandBadge({ compact }) {
+  return (
+    <span
+      title="Verified In Hand — trusted seller"
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 3,
+        fontSize: compact ? 8 : 9,
+        fontWeight: 800,
+        letterSpacing: 0.2,
+        color: "#1f4f82",
+        background: "linear-gradient(135deg,#EAF1FA,#dce8f5)",
+        border: "1px solid #b8cce8",
+        borderRadius: 999,
+        padding: compact ? "1px 6px" : "2px 8px",
+        flexShrink: 0,
+        lineHeight: 1.2,
+      }}
+    >
+      <span aria-hidden="true" style={{ color: "#00b894", fontSize: compact ? 9 : 10 }}>
+        ✓
+      </span>
+      In Hand
+    </span>
+  );
+}
+
 export function BellIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
