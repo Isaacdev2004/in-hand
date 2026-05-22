@@ -22,7 +22,7 @@ See the comments inside src/in-hand-v5.jsx — every mock function has instructi
 - Supabase (auth + database)
 - Stripe Connect (payments + escrow)
 - Cloudinary (photo uploads)
-- EasyPost (shipping labels)
+- Shippo (shipping labels) — see `SHIPPO_SETUP.md`
 - eBay Browse API (market values)
 - Firebase FCM (push notifications)
 - Resend (transactional emails)
@@ -43,7 +43,7 @@ REACT_APP_SUPABASE_ANON_KEY=
 REACT_APP_STRIPE_PUBLISHABLE_KEY=
 REACT_APP_STRIPE_CHECKOUT_URL=
 REACT_APP_CLOUDINARY_CLOUD_NAME=
-REACT_APP_EASYPOST_API_KEY=
+SHIPPO_API_TOKEN=   # Supabase Edge Function secret only — see SHIPPO_SETUP.md
 REACT_APP_EBAY_CLIENT_ID=
 REACT_APP_RESEND_API_KEY=
 REACT_APP_FIREBASE_SERVER_KEY=

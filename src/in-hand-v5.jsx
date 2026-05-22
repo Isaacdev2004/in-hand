@@ -24,6 +24,7 @@ import {
   markAllNotificationsRead,
 } from "./lib/marketplaceApi";
 import { startStripeCheckout } from "./lib/stripeCheckout";
+import { createShippingLabel } from "./lib/shippoLabel";
 import { ensureUserProfile } from "./lib/authSession";
 import { updateOwnUser } from "./lib/usersApi";
 import {
@@ -439,7 +440,7 @@ function CyclingSubtitle() {
 // ─── SHARED STYLES ────────────────────────────────────────────────────────────
 const IS = { background:"#fff", border:"1px solid #d8e0ea", borderRadius:14, padding:"12px 14px", fontSize:14, fontFamily:UI_FONT, fontWeight:500, color:"#15202b", width:"100%", outline:"none" };
 const TS = (on) => ({ flex:1, background:on?"#2C3E50":"#E4EBF2", border:"none", borderRadius:10, padding:"9px", textAlign:"center", fontSize:12, fontWeight:700, color:on?"#fff":"#aaa", cursor:"pointer", transition:"all 0.15s" });
-const Btn = ({ children, onClick, style = {}, type = "button" }) => <button type={type} onClick={onClick} style={{ border:"none", borderRadius:12, padding:"12px", fontWeight:700, fontSize:14, cursor:"pointer", fontFamily:UI_FONT, ...style }}>{children}</button>;
+const Btn = ({ children, onClick, style = {}, type = "button", disabled }) => <button type={type} onClick={onClick} disabled={disabled} style={{ border:"none", borderRadius:12, padding:"12px", fontWeight:700, fontSize:14, cursor:disabled?"not-allowed":"pointer", fontFamily:UI_FONT, ...style }}>{children}</button>;
 
 // ─── CHECKOUT MODAL ───────────────────────────────────────────────────────────
 function CheckoutModal({ card, seller, myUser, onConfirm, onClose }) {
@@ -1276,6 +1277,12 @@ function LabelModal({ shipment, rate, seller, buyer, sellerAddresses, onGenerate
   });
   const [toAddr] = useState({ name: buyer?.username || "", city: buyer?.location || "On file" });
   const [generatedTN, setGeneratedTN] = useState("");
+  const [labelUrl, setLabelUrl] = useState("");
+  const [generateError, setGenerateError] = useState("");
+  const buyerShipAddr = buyer?.addresses?.find((a) => a.isDefault) || buyer?.addresses?.[0];
+  const buyerAddressReady = !!(
+    buyerShipAddr?.street && buyerShipAddr?.city && buyerShipAddr?.state && buyerShipAddr?.zip
+  );
   const setF = (k, v) => setFromAddr(a => ({...a, [k]: v}));
 
   const pickSavedAddr = (addr) => {
@@ -1283,15 +1290,29 @@ function LabelModal({ shipment, rate, seller, buyer, sellerAddresses, onGenerate
     setFromAddr({ name:addr.name, street:addr.street, city:addr.city, state:addr.state, zip:addr.zip });
   };
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
+    setGenerateError("");
     setStep("generating");
-    // Simulate EasyPost API call (1.5s delay)
-    setTimeout(() => {
-      // Generate a realistic fake USPS tracking number
-      const tn = "9400111899" + Math.floor(Math.random() * 9000000000000 + 1000000000000);
-      setGeneratedTN(tn);
-      setStep("done");
-    }, 1500);
+    try {
+      if (supabase) {
+        const result = await createShippingLabel({
+          shipmentId: shipment.id,
+          fromAddress: fromAddr,
+        });
+        setGeneratedTN(result.trackingNumber || "");
+        setLabelUrl(result.labelUrl || "");
+        setStep("done");
+        return;
+      }
+      setTimeout(() => {
+        const tn = "9400111899" + Math.floor(Math.random() * 9000000000000 + 1000000000000);
+        setGeneratedTN(tn);
+        setStep("done");
+      }, 1500);
+    } catch (err) {
+      setStep("confirm");
+      setGenerateError(err?.message || "Could not generate label");
+    }
   };
 
   const uspsRedUrl = `https://tools.usps.com/go/TrackConfirmAction?tLabels=${generatedTN}`;
@@ -1344,7 +1365,7 @@ function LabelModal({ shipment, rate, seller, buyer, sellerAddresses, onGenerate
             <div style={{ fontWeight:800,fontSize:18,color:"#2C3E50" }}>
               {step==="done" ? "🏷️ Label Ready!" : "🏷️ Generate Shipping Label"}
             </div>
-            <div style={{ fontSize:11,color:"#aaa",marginTop:2 }}>Powered by EasyPost + USPS</div>
+            <div style={{ fontSize:11,color:"#aaa",marginTop:2 }}>Powered by Shippo + USPS</div>
           </div>
           <button onClick={onClose} style={{ background:"#E4EBF2",border:"none",borderRadius:"50%",width:32,height:32,fontSize:16,cursor:"pointer" }}>✕</button>
         </div>
@@ -1377,8 +1398,16 @@ function LabelModal({ shipment, rate, seller, buyer, sellerAddresses, onGenerate
             <div style={{ background:"#f0fff8",border:"1.5px solid #00b89433",borderRadius:14,padding:"12px 14px",marginBottom:16 }}>
               <div style={{ fontWeight:700,fontSize:11,color:"#00b894",marginBottom:8,letterSpacing:0.8 }}>SHIPPING TO</div>
               <div style={{ fontWeight:800,fontSize:13,color:"#2C3E50" }}>{toAddr.name}</div>
-              <div style={{ fontSize:11,color:"#aaa",marginTop:2 }}>Address on file · {toAddr.city}</div>
-              <div style={{ fontSize:10,color:"#aaa",marginTop:4,fontStyle:"italic" }}>Full address provided by EasyPost at label generation</div>
+              <div style={{ fontSize:11,color:"#aaa",marginTop:2 }}>
+                {buyerAddressReady
+                  ? `${buyerShipAddr.street}, ${buyerShipAddr.city}, ${buyerShipAddr.state} ${buyerShipAddr.zip}`
+                  : `Address on file · ${toAddr.city}`}
+              </div>
+              {!buyerAddressReady && supabase && (
+                <div style={{ fontSize:10,color:"#ff6b6b",marginTop:6,fontWeight:600 }}>
+                  Buyer must add a full shipping address in Account → Addresses before you can generate a label.
+                </div>
+              )}
             </div>
 
             {/* Saved address picker */}
@@ -1410,12 +1439,12 @@ function LabelModal({ shipment, rate, seller, buyer, sellerAddresses, onGenerate
               </div>
             </div>
 
-            {/* EasyPost notice */}
+            {/* Shippo notice */}
             <div style={{ background:"#EAF1FA",borderRadius:14,padding:"12px 14px",marginBottom:20,display:"flex",gap:10 }}>
               <span style={{ fontSize:20 }}>⚡</span>
               <div>
-                <div style={{ fontWeight:700,fontSize:12,color:"#3A7BD5" }}>EasyPost API</div>
-                <div style={{ fontSize:11,color:"#888",marginTop:2 }}>Label cost is deducted from your escrow. Your developer will connect this to a live EasyPost account — label cost will be automatically charged at generation.</div>
+                <div style={{ fontWeight:700,fontSize:12,color:"#3A7BD5" }}>Shippo labels</div>
+                <div style={{ fontSize:11,color:"#888",marginTop:2 }}>Buyer already paid USPS shipping at checkout. In Hand purchases the label through Shippo (goshippo.com); cost is covered from escrow.</div>
               </div>
             </div>
 
@@ -1444,6 +1473,11 @@ function LabelModal({ shipment, rate, seller, buyer, sellerAddresses, onGenerate
                 </div>
               ))}
             </div>
+            {generateError && (
+              <div style={{ background:"#fff0f0",borderRadius:12,padding:"12px 14px",marginBottom:12,fontSize:12,color:"#ff6b6b",fontWeight:600 }}>
+                {generateError}
+              </div>
+            )}
             <div style={{ background:"#fff8e6",borderRadius:12,padding:"12px 14px",marginBottom:12,fontSize:12,color:"#f0932b",fontWeight:600 }}>
               ⚠️ Once generated, the label cost is non-refundable. Make sure the item is packaged and ready to ship.
             </div>
@@ -1458,7 +1492,11 @@ function LabelModal({ shipment, rate, seller, buyer, sellerAddresses, onGenerate
             </div>
             <div style={{ display:"flex",gap:8 }}>
               <button onClick={()=>setStep("details")} style={{ flex:1,background:"#EEF2F7",border:"none",borderRadius:12,padding:"12px",fontWeight:700,fontSize:13,color:"#555",cursor:"pointer" }}>← Back</button>
-              <Btn onClick={handleGenerate} style={{ flex:2,background:"linear-gradient(135deg,#2C3E50,#2d3561)",color:"#fff" }}>Generate Label ✓</Btn>
+              <Btn
+                onClick={handleGenerate}
+                style={{ flex:2,background:"linear-gradient(135deg,#2C3E50,#2d3561)",color:"#fff",opacity:supabase && !buyerAddressReady ? 0.5 : 1 }}
+                disabled={supabase && !buyerAddressReady}
+              >Generate Label ✓</Btn>
             </div>
           </>
         )}
@@ -1467,7 +1505,7 @@ function LabelModal({ shipment, rate, seller, buyer, sellerAddresses, onGenerate
         {step==="generating" && (
           <div style={{ textAlign:"center",padding:"40px 0" }}>
             <div style={{ fontSize:52,marginBottom:16 }}>📡</div>
-            <div style={{ fontWeight:800,fontSize:16,color:"#2C3E50",marginBottom:8 }}>Contacting EasyPost…</div>
+            <div style={{ fontWeight:800,fontSize:16,color:"#2C3E50",marginBottom:8 }}>Contacting Shippo…</div>
             <div style={{ fontSize:12,color:"#aaa",marginBottom:24 }}>Generating your USPS Ground Advantage label</div>
             <div style={{ display:"flex",justifyContent:"center",gap:6 }}>
               {[0,1,2].map(i=><div key={i} style={{ width:8,height:8,borderRadius:"50%",background:"#3A7BD5",animation:`pulse 1.2s ease-in-out ${i*0.2}s infinite` }} />)}
@@ -1516,8 +1554,8 @@ function LabelModal({ shipment, rate, seller, buyer, sellerAddresses, onGenerate
 
             {/* Actions */}
             <div style={{ display:"flex",flexDirection:"column",gap:10,marginBottom:16 }}>
-              <button onClick={()=>{ window.open(`https://usps.com/print-label?tn=${generatedTN}`,"_blank"); }} style={{ background:"#2C3E50",border:"none",borderRadius:14,padding:"13px",fontWeight:800,fontSize:14,color:"#fff",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8 }}>
-                🖨️ Print Label (PDF)
+              <button onClick={()=>{ window.open(labelUrl || `https://tools.usps.com/go/TrackConfirmAction?tLabels=${generatedTN}`,"_blank"); }} style={{ background:"#2C3E50",border:"none",borderRadius:14,padding:"13px",fontWeight:800,fontSize:14,color:"#fff",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8 }}>
+                🖨️ {labelUrl ? "Open Label PDF" : "Track on USPS"}
               </button>
               <button onClick={()=>{ navigator.clipboard?.writeText(generatedTN); }} style={{ background:"#EAF1FA",border:"none",borderRadius:14,padding:"12px",fontWeight:700,fontSize:13,color:"#3A7BD5",cursor:"pointer" }}>
                 📋 Copy Tracking Number

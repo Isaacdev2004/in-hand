@@ -8,3 +8,9 @@
 - **Admin → Disputes:** Shows **Purchase** / **Trade** chip and stored counterparty name.
 
 Apply migration: `npx supabase db push --linked` (or run the SQL in the Supabase SQL editor).
+
+## Shipping provider — Shippo
+
+- Product uses **[Shippo](https://goshippo.com)** instead of EasyPost.
+- UI: `LabelModal` copy updated; label generation still simulated until Edge Function is wired.
+- Developer guide: `SHIPPO_SETUP.md`. Token is **server-side only** (`SHIPPO_API_TOKEN` on Supabase, not `REACT_APP_*`).

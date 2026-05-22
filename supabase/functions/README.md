@@ -1,4 +1,4 @@
-# Supabase Edge Functions (Stripe)
+# Supabase Edge Functions (Stripe + Shippo)
 
 ## One-time secrets (Dashboard → Edge Functions → Secrets, or CLI)
 
@@ -6,6 +6,7 @@ Set:
 
 - `STRIPE_SECRET_KEY` — from Stripe Dashboard (secret key)
 - `STRIPE_WEBHOOK_SECRET` — from Stripe → Webhooks → signing secret (after you add the endpoint below)
+- `SHIPPO_API_TOKEN` — from [Shippo → Settings → API](https://goshippo.com/user/settings/api) (test or live)
 
 `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are available automatically to functions when deployed on Supabase.
 
@@ -17,6 +18,11 @@ supabase link --project-ref YOUR_PROJECT_REF
 supabase db push
 supabase functions deploy create-checkout-session
 supabase functions deploy stripe-webhook
+supabase functions deploy create-shipping-label
+```
+
+```bash
+npx supabase secrets set SHIPPO_API_TOKEN=shippo_test_...
 ```
 
 `create-checkout-session` expects **`Authorization: Bearer <user access token>`** (the signed-in buyer’s JWT from `supabase.auth.getSession()`), not the anon key. The Edge function verifies `buyerId` matches that user. The app’s `startStripeCheckout` sends the session access token automatically.

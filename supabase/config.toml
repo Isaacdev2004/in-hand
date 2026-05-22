@@ -8,3 +8,7 @@ verify_jwt = false
 [functions.stripe-webhook]
 # Stripe sends no JWT; verification is via stripe-signature + STRIPE_WEBHOOK_SECRET.
 verify_jwt = false
+
+[functions.create-shipping-label]
+# App sends the seller's Supabase JWT; function also validates seller + shipment.
+verify_jwt = false
