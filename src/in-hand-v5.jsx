@@ -26,7 +26,7 @@ import {
 import { startStripeCheckout } from "./lib/stripeCheckout";
 import { createShippingLabel } from "./lib/shippoLabel";
 import { ensureUserProfile } from "./lib/authSession";
-import { updateOwnUser, updateWalletBalance, patchUserWalletInList } from "./lib/usersApi";
+import { updateOwnUser } from "./lib/usersApi";
 import {
   BellIcon,
   figureInitials,
@@ -442,13 +442,9 @@ const IS = { background:"#fff", border:"1px solid #d8e0ea", borderRadius:14, pad
 const TS = (on) => ({ flex:1, background:on?"#2C3E50":"#E4EBF2", border:"none", borderRadius:10, padding:"9px", textAlign:"center", fontSize:12, fontWeight:700, color:on?"#fff":"#aaa", cursor:"pointer", transition:"all 0.15s" });
 const Btn = ({ children, onClick, style = {}, type = "button", disabled }) => <button type={type} onClick={onClick} disabled={disabled} style={{ border:"none", borderRadius:12, padding:"12px", fontWeight:700, fontSize:14, cursor:disabled?"not-allowed":"pointer", fontFamily:UI_FONT, ...style }}>{children}</button>;
 
-// ─── CHECKOUT MODAL ───────────────────────────────────────────────────────────
-function CheckoutModal({ card, seller, myUser, onConfirm, onClose }) {
-  const [step, setStep] = useState("review"); // review | method | pin | success
-  const [payMethod, setPayMethod] = useState(myUser.paymentMethods.find(p=>p.isDefault) || null);
-  const [useWallet, setUseWallet] = useState(false);
-  const [pin, setPin] = useState("");
-  const [pinError, setPinError] = useState(false);
+// ─── CHECKOUT MODAL (card via Stripe Checkout — no prepaid wallet) ─────────────
+function CheckoutModal({ card, seller, onPayWithCard, onClose }) {
+  const [busy, setBusy] = useState(false);
 
   const fee = parseFloat((card.value * PLATFORM_FEE).toFixed(2));
   const shippingRate = getShippingRate(card.value);
@@ -456,45 +452,25 @@ function CheckoutModal({ card, seller, myUser, onConfirm, onClose }) {
   const insurance = getInsuranceCost(card.value);
   const total = parseFloat((card.value + fee).toFixed(2));
   const grandTotal = parseFloat((total + shipping + insurance).toFixed(2));
-  const canAffordWallet = myUser.walletBalance >= grandTotal;
 
-  const handlePay = () => {
-    if (step === "review") { setStep("method"); return; }
-    if (step === "method") { setStep("pin"); return; }
-    if (step === "pin") {
-      if (pin !== "1234") { setPinError(true); setTimeout(()=>setPinError(false), 1200); setPin(""); return; }
-      setStep("success");
-      onConfirm({ payMethod: useWallet ? "wallet" : payMethod?.type || "card", fee, total });
+  const handlePay = async () => {
+    setBusy(true);
+    try {
+      await onPayWithCard();
+    } finally {
+      setBusy(false);
     }
   };
-
-  const cardBrand = (pm) => pm.type === "paypal" ? "💙 PayPal" : pm.brand === "Visa" ? "💳 Visa" : pm.brand === "Mastercard" ? "💳 MC" : "💳 Amex";
-
-  if (step === "success") return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:600, display:"flex", alignItems:"center", justifyContent:"center" }}>
-      <div style={{ background:"#fff", borderRadius:28, padding:"40px 32px", maxWidth:360, width:"90%", textAlign:"center" }}>
-        <div style={{ fontSize:64, marginBottom:16 }}>🔒</div>
-        <div style={{ fontWeight:900, fontSize:22, color:"#2C3E50", marginBottom:8 }}>Payment in Escrow!</div>
-        <div style={{ fontSize:13, color:"#aaa", marginBottom:6 }}>Paid <strong style={{color:"#2C3E50"}}>${fmt(grandTotal)}</strong> including USPS Ground shipping</div>
-        <div style={{ background:"#f0fff8", borderRadius:12, padding:"12px", marginBottom:20, fontSize:12, color:"#00b894", fontWeight:600 }}>Seller will be notified to ship via USPS Ground. Funds release automatically when tracking confirms delivery.</div>
-        <Btn onClick={onClose} style={{ background:"#2C3E50", color:"#fff", width:"100%" }}>Done</Btn>
-      </div>
-    </div>
-  );
 
   return (
     <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:600, display:"flex", alignItems:"flex-end", justifyContent:"center" }}>
       <div style={{ background:"#fff", borderRadius:"28px 28px 0 0", padding:"24px 20px 40px", width:"100%", maxWidth:430 }}>
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:20 }}>
-          <div style={{ fontWeight:800, fontSize:18, color:"#2C3E50" }}>
-            {step==="review" ? "Review Purchase" : step==="method" ? "Payment Method" : "Confirm PIN"}
-          </div>
-          <button onClick={onClose} style={{ background:"#E4EBF2", border:"none", borderRadius:"50%", width:32, height:32, fontSize:16, cursor:"pointer" }}>✕</button>
+          <div style={{ fontWeight:800, fontSize:18, color:"#2C3E50" }}>Review Purchase</div>
+          <button onClick={onClose} disabled={busy} style={{ background:"#E4EBF2", border:"none", borderRadius:"50%", width:32, height:32, fontSize:16, cursor:"pointer" }}>✕</button>
         </div>
 
-        {/* STEP: REVIEW */}
-        {step === "review" && (
-          <>
+        <>
             <div style={{ background:"#f9f9f9", borderRadius:18, padding:"16px", marginBottom:16, display:"flex", gap:14, alignItems:"center" }}>
               <FigureImage card={card} size={60} borderRadius={14} />
               <div>
@@ -531,73 +507,20 @@ function CheckoutModal({ card, seller, myUser, onConfirm, onClose }) {
                 <span style={{ fontSize:12, fontWeight:700, color:"#00b894" }}>${fmt(parseFloat((card.value * (1-PLATFORM_FEE)).toFixed(2)))}</span>
               </div>
             </div>
-            <div style={{ background:"#fff8e6", borderRadius:12, padding:"10px 14px", marginBottom:20, display:"flex", gap:10, alignItems:"flex-start" }}>
+            <div style={{ background:"#fff8e6", borderRadius:12, padding:"10px 14px", marginBottom:12, display:"flex", gap:10, alignItems:"flex-start" }}>
               <span style={{ fontSize:18 }}>🔒</span>
               <div>
                 <div style={{ fontWeight:700, fontSize:12, color:"#f0932b" }}>Escrow Protection</div>
                 <div style={{ fontSize:11, color:"#888", marginTop:2 }}>Your payment is held safely until USPS tracking confirms delivery. Seller gets paid only when you receive it.</div>
               </div>
             </div>
-            <Btn onClick={handlePay} style={{ background:"#2C3E50", color:"#fff", width:"100%" }}>Continue to Payment →</Btn>
-          </>
-        )}
-
-        {/* STEP: METHOD */}
-        {step === "method" && (
-          <>
-            {/* Wallet option */}
-            <div onClick={()=>{setUseWallet(true);}} style={{ background:useWallet?"#f0fff8":"#f9f9f9", border:`2px solid ${useWallet?"#00b894":"transparent"}`, borderRadius:16, padding:"14px 16px", marginBottom:10, cursor:"pointer", display:"flex", alignItems:"center", gap:12 }}>
-              <div style={{ fontSize:28 }}>💰</div>
-              <div style={{ flex:1 }}>
-                <div style={{ fontWeight:800, fontSize:13, color:"#2C3E50" }}>In Hand Wallet</div>
-                <div style={{ fontSize:11, color: canAffordWallet ? "#00b894" : "#ff6b6b", fontWeight:700 }}>Balance: ${fmt(myUser.walletBalance)} {!canAffordWallet && "— insufficient"}</div>
-              </div>
-              {useWallet && <div style={{ width:20, height:20, borderRadius:"50%", background:"#00b894", display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, color:"#fff" }}>✓</div>}
+            <div style={{ background:"#EAF1FA", borderRadius:12, padding:"10px 14px", marginBottom:20, fontSize:11, color:"#555", lineHeight:1.5 }}>
+              You will pay with your <strong>debit or credit card</strong> on Stripe’s secure checkout. In Hand wallet balance is for <strong>sale earnings only</strong> — not used at purchase.
             </div>
-            {/* Saved payment methods */}
-            {myUser.paymentMethods.map(pm => (
-              <div key={pm.id} onClick={()=>{setUseWallet(false); setPayMethod(pm);}} style={{ background:(!useWallet&&payMethod?.id===pm.id)?"#EAF1FA":"#f9f9f9", border:`2px solid ${(!useWallet&&payMethod?.id===pm.id)?"#3A7BD5":"transparent"}`, borderRadius:16, padding:"14px 16px", marginBottom:10, cursor:"pointer", display:"flex", alignItems:"center", gap:12 }}>
-                <div style={{ fontSize:24 }}>{pm.type==="paypal"?"💙":"💳"}</div>
-                <div style={{ flex:1 }}>
-                  <div style={{ fontWeight:800, fontSize:13, color:"#2C3E50" }}>{pm.type==="paypal" ? `PayPal · ${pm.email}` : `${pm.brand} ···· ${pm.last4}`}</div>
-                  {pm.expiry && <div style={{ fontSize:11, color:"#aaa" }}>Expires {pm.expiry}</div>}
-                  {pm.isDefault && <span style={{ fontSize:9, background:"#e8fff6", color:"#00b894", borderRadius:5, padding:"1px 6px", fontWeight:700 }}>DEFAULT</span>}
-                </div>
-                {(!useWallet&&payMethod?.id===pm.id) && <div style={{ width:20, height:20, borderRadius:"50%", background:"#3A7BD5", display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, color:"#fff" }}>✓</div>}
-              </div>
-            ))}
-            {/* Add new */}
-            <div style={{ border:"1.5px dashed #ddd", borderRadius:16, padding:"12px 16px", marginBottom:20, display:"flex", alignItems:"center", gap:10, cursor:"pointer", color:"#aaa" }}>
-              <span style={{ fontSize:20 }}>➕</span><span style={{ fontSize:13, fontWeight:600 }}>Add new card</span>
-            </div>
-            <Btn onClick={handlePay} style={{ background:"#2C3E50", color:"#fff", width:"100%" }}>Pay ${fmt(grandTotal)} →</Btn>
-          </>
-        )}
-
-        {/* STEP: PIN */}
-        {step === "pin" && (
-          <>
-            <div style={{ textAlign:"center", marginBottom:24 }}>
-              <div style={{ fontSize:44, marginBottom:12 }}>🔒</div>
-              <div style={{ fontWeight:700, fontSize:14, color:"#555" }}>Enter your PIN to confirm</div>
-              <div style={{ fontSize:11, color:"#aaa", marginTop:4 }}>Paying ${fmt(total)} · {useWallet ? "Wallet" : payMethod ? (payMethod.type==="paypal" ? "PayPal" : `${payMethod.brand} ····${payMethod.last4}`) : "Card"}</div>
-            </div>
-            <div style={{ display:"flex", gap:10, justifyContent:"center", marginBottom:24 }}>
-              {[0,1,2,3].map(i => (
-                <div key={i} style={{ width:52, height:60, borderRadius:14, background: pinError ? "#fff0f0" : "#f7f7f7", border:`2px solid ${pinError?"#ff6b6b":pin.length>i?"#2C3E50":"#DCE6F0"}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:24, fontWeight:900, color:pinError?"#ff6b6b":"#2C3E50", transition:"all 0.2s" }}>
-                  {pin.length > i ? "●" : ""}
-                </div>
-              ))}
-            </div>
-            {pinError && <div style={{ textAlign:"center", color:"#ff6b6b", fontSize:12, fontWeight:700, marginBottom:12 }}>Incorrect PIN. Try again.</div>}
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10, marginBottom:12 }}>
-              {["1","2","3","4","5","6","7","8","9","","0","⌫"].map((k,i)=>(
-                <button key={i} onClick={()=>{ if(!k) return; if(k==="⌫"){setPin(p=>p.slice(0,-1));} else if(pin.length<4){const np=pin+k; setPin(np); if(np.length===4) setTimeout(()=>handlePay(),120);} }} style={{ background: k?"#f7f7f7":"transparent", border:"none", borderRadius:14, padding:"16px", fontSize:20, fontWeight:700, color:"#2C3E50", cursor:k?"pointer":"default" }}>{k}</button>
-              ))}
-            </div>
-            <div style={{ textAlign:"center", fontSize:11, color:"#ccc" }}>Hint: PIN is 1234</div>
-          </>
-        )}
+            <Btn onClick={handlePay} disabled={busy} style={{ background:"#2C3E50", color:"#fff", width:"100%", opacity:busy?0.7:1 }}>
+              {busy ? "Opening Stripe…" : `Pay $${fmt(grandTotal)} with card`}
+            </Btn>
+        </>
       </div>
     </div>
   );
@@ -735,13 +658,14 @@ function TradeSweetenerModal({ myFigure, theirFigure, theirOwner, myUser, onConf
               <span style={{ fontSize:13,color:"#888",fontWeight:600 }}>Sweetener to pay</span>
               <span style={{ fontWeight:900,fontSize:18,color:"#f0932b" }}>${fmt(total)}</span>
             </div>
-            <div onClick={()=>setUseWallet(true)} style={{ background:useWallet?"#f0fff8":"#f9f9f9",border:`2px solid ${useWallet?"#00b894":"transparent"}`,borderRadius:16,padding:"14px 16px",marginBottom:10,cursor:"pointer",display:"flex",alignItems:"center",gap:12 }}>
+            <div onClick={()=>{ if(canAffordWallet) setUseWallet(true); }} style={{ background:useWallet?"#f0fff8":"#f9f9f9",border:`2px solid ${useWallet?"#00b894":"transparent"}`,borderRadius:16,padding:"14px 16px",marginBottom:10,cursor:canAffordWallet?"pointer":"default",opacity:canAffordWallet?1:0.65,display:"flex",alignItems:"center",gap:12 }}>
               <div style={{ fontSize:28 }}>💰</div>
               <div style={{ flex:1 }}>
-                <div style={{ fontWeight:800,fontSize:13,color:"#2C3E50" }}>In Hand Wallet</div>
-                <div style={{ fontSize:11,color:canAffordWallet?"#00b894":"#ff6b6b",fontWeight:700 }}>Balance: ${fmt(myUser.walletBalance)} {!canAffordWallet&&"— insufficient"}</div>
+                <div style={{ fontWeight:800,fontSize:13,color:"#2C3E50" }}>Pay from sale earnings</div>
+                <div style={{ fontSize:11,color:canAffordWallet?"#00b894":"#ff6b6b",fontWeight:700 }}>Wallet: ${fmt(myUser.walletBalance)} {!canAffordWallet&&"— use card below"}</div>
+                <div style={{ fontSize:10,color:"#aaa",marginTop:4 }}>Only past sale payouts — not prepaid top-ups.</div>
               </div>
-              {useWallet&&<div style={{ width:20,height:20,borderRadius:"50%",background:"#00b894",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,color:"#fff" }}>✓</div>}
+              {useWallet&&canAffordWallet&&<div style={{ width:20,height:20,borderRadius:"50%",background:"#00b894",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,color:"#fff" }}>✓</div>}
             </div>
             {myUser.paymentMethods.map(pm=>(
               <div key={pm.id} onClick={()=>{setUseWallet(false);setPayMethod(pm);}} style={{ background:(!useWallet&&payMethod?.id===pm.id)?"#EAF1FA":"#f9f9f9",border:`2px solid ${(!useWallet&&payMethod?.id===pm.id)?"#3A7BD5":"transparent"}`,borderRadius:16,padding:"14px 16px",marginBottom:10,cursor:"pointer",display:"flex",alignItems:"center",gap:12 }}>
@@ -3433,8 +3357,6 @@ function AppShell({ onSignOut, authUser }) {
   const [ratingModal, setRatingModal] = useState(null);
   const [activeThread, setActiveThread] = useState(null);
   const [adminView, setAdminView] = useState("users");
-  const [walletAction, setWalletAction] = useState(null);
-  const [topupAmount, setTopupAmount] = useState("");
   const [photoViewer, setPhotoViewer] = useState(null);
   const [listingVideoModal, setListingVideoModal] = useState(null);
   const [vaultVideoDraft, setVaultVideoDraft] = useState("");
@@ -3712,68 +3634,20 @@ function AppShell({ onSignOut, authUser }) {
     notify(trimmed ? "🎬 Video link saved" : "Video link cleared");
   };
 
-  const handlePurchaseConfirm = async (card, { payMethod, fee, total }) => {
-    if (payMethod !== "wallet") {
-      setCheckoutCard(null);
-      try {
-        await startStripeCheckout({
-          listingId: card.id,
-          buyerId: activeUserId,
-          successUrl: `${window.location.origin}?checkout=success`,
-          cancelUrl: `${window.location.origin}?checkout=cancelled`,
-        });
-        return;
-      } catch (err) {
-        console.error("In Hand: Stripe checkout start failed", err);
-        notify("❌ Could not start Stripe checkout. Deploy Edge Function + set secrets.");
-        return;
-      }
-    }
-    const shippingRate = getShippingRate(card.value);
-    const shipping = shippingRate.price;
-    const grandTotal = parseFloat((total + shipping).toFixed(2));
-    const txn = { id:"t"+Date.now(), type:"purchase", buyerId:activeUserId, sellerId:card.ownerId, cardId:card.id, amount:card.value, fee, shipping, net:card.value-fee, status:"in_escrow", method:payMethod, date:new Date().toISOString().split("T")[0], cardName:card.name };
-    const shipment = { id:"sh"+Date.now(), txnId:txn.id, trackingNumber:"", carrier:"USPS Ground", status:"label_pending", estimatedDelivery:"", shippingCost:shipping, shippingLabel:shippingRate.label, fromUser:card.ownerId, toUser:activeUserId, figureName:card.name, figureValue:card.value, fundsReleased:false, events:[] };
-    const nextBuyerWallet =
-      payMethod === "wallet" && myUser
-        ? parseFloat((myUser.walletBalance - grandTotal).toFixed(2))
-        : null;
-    if (supabase) {
-      const { error: txnErr } = await upsertTransaction(txn);
-      if (txnErr) {
-        console.error("In Hand: transaction insert failed", txnErr);
-        notify("❌ Purchase not completed: transaction write failed");
-        return;
-      }
-      const { error: shipErr } = await upsertShipment(shipment);
-      if (shipErr) {
-        console.error("In Hand: shipment insert failed", shipErr);
-        notify("❌ Purchase not completed: shipment write failed");
-        return;
-      }
-      const { error: listingErr } = await deleteListing(card.id);
-      if (listingErr) {
-        console.error("In Hand: listing removal on purchase failed", listingErr);
-        notify("❌ Purchase not completed: listing update failed");
-        return;
-      }
-      if (payMethod === "wallet" && nextBuyerWallet != null) {
-        const { error: wErr } = await updateOwnUser(activeUserId, { walletBalance: nextBuyerWallet });
-        if (wErr) {
-          console.error("In Hand: buyer wallet update failed", wErr);
-          notify("⚠️ Purchase saved; wallet balance may be out of sync — refresh");
-        }
-      }
-    }
-    setDb(d => {
-      const newUsers = d.users.map(u => {
-        if(u.id===activeUserId && payMethod==="wallet") return {...u, walletBalance:parseFloat((u.walletBalance-grandTotal).toFixed(2))};
-        return u;
-      });
-      return { ...d, users:newUsers, cards:d.cards.filter(c=>c.id!==card.id), transactions:[txn,...d.transactions], shipments:[shipment,...(d.shipments||[])] };
-    });
+  const handlePurchaseWithCard = async (card) => {
     setCheckoutCard(null);
-    notify("💰 Funds held in escrow until delivery confirmed!");
+    try {
+      await startStripeCheckout({
+        listingId: card.id,
+        buyerId: activeUserId,
+        successUrl: `${window.location.origin}?checkout=success`,
+        cancelUrl: `${window.location.origin}?checkout=cancelled`,
+      });
+    } catch (err) {
+      console.error("In Hand: Stripe checkout start failed", err);
+      notify("❌ Could not start Stripe checkout. Deploy Edge Function + set secrets.");
+      setCheckoutCard(card);
+    }
   };
 
   const handleReleaseFunds = async (shipment) => {
@@ -4171,70 +4045,6 @@ function AppShell({ onSignOut, authUser }) {
     notify("⭐ Rating submitted — thanks!");
   };
 
-  const handleTopup = async () => {
-    const amt = parseFloat(topupAmount);
-    if (!amt || amt <= 0) {
-      notify("Enter an amount greater than $0 (tap $25 / $50 / $100 or type a custom amount)");
-      return;
-    }
-    const currentBal = myUser?.walletBalance ?? 0;
-    let nextBal = parseFloat((currentBal + amt).toFixed(2));
-    if (supabase) {
-      const { data, error } = await updateWalletBalance(activeUserId, nextBal);
-      if (error) {
-        console.error("In Hand: wallet top-up failed", error);
-        notify(`❌ Could not save wallet: ${error.message || "check you are signed in"}`);
-        return;
-      }
-      if (!data) {
-        notify("❌ Profile not found — sign out and sign in again");
-        return;
-      }
-      nextBal = Number(data.wallet_balance);
-    }
-    setDb((d) => ({
-      ...d,
-      users: patchUserWalletInList(d.users, activeUserId, nextBal, authUser),
-    }));
-    notify(`✅ $${fmt(amt)} added to wallet`);
-    setTopupAmount("");
-    setWalletAction(null);
-  };
-
-  const handleWithdraw = async () => {
-    const amt = parseFloat(topupAmount);
-    if (!amt || amt <= 0) {
-      notify("Enter an amount to withdraw");
-      return;
-    }
-    const currentBal = myUser?.walletBalance ?? 0;
-    if (amt > currentBal) {
-      notify(`You only have $${fmt(currentBal)} available`);
-      return;
-    }
-    let nextBal = parseFloat((currentBal - amt).toFixed(2));
-    if (supabase) {
-      const { data, error } = await updateWalletBalance(activeUserId, nextBal);
-      if (error) {
-        console.error("In Hand: wallet withdraw failed", error);
-        notify(`❌ Could not save wallet: ${error.message || "check you are signed in"}`);
-        return;
-      }
-      if (!data) {
-        notify("❌ Profile not found — sign out and sign in again");
-        return;
-      }
-      nextBal = Number(data.wallet_balance);
-    }
-    setDb((d) => ({
-      ...d,
-      users: patchUserWalletInList(d.users, activeUserId, nextBal, authUser),
-    }));
-    notify(`✅ $${fmt(amt)} withdrawn`);
-    setTopupAmount("");
-    setWalletAction(null);
-  };
-
   const visibleSwipeData = swipeCards.slice(-4).map(id=>enriched.find(c=>c.id===id)).filter(Boolean).reverse();
 
   const goToTab = (id) => {
@@ -4259,7 +4069,7 @@ function AppShell({ onSignOut, authUser }) {
 
       {toast && <div className="inhand-toast">{toast}</div>}
       {showAddCard && <AddCardModal ownerId={activeUserId} onSave={handleAddCard} onClose={()=>setShowAddCard(false)} />}
-      {checkoutCard && <CheckoutModal card={checkoutCard} seller={getUser(checkoutCard.ownerId)} myUser={myUser} onConfirm={(opts)=>handlePurchaseConfirm(checkoutCard,opts)} onClose={()=>setCheckoutCard(null)} />}
+      {checkoutCard && <CheckoutModal card={checkoutCard} seller={getUser(checkoutCard.ownerId)} onPayWithCard={()=>handlePurchaseWithCard(checkoutCard)} onClose={()=>setCheckoutCard(null)} />}
       {sweetenerTrade && <TradeSweetenerModal myFigure={sweetenerTrade.myFigure} theirFigure={sweetenerTrade.theirCard} theirOwner={getUser(sweetenerTrade.theirCard.ownerId)} myUser={myUser} onConfirm={handleSweetenerConfirm} onClose={()=>setSweetenerTrade(null)} />}
       {marketModal && <MarketValueModal card={marketModal} onClose={()=>setMarketModal(null)} />}
       {showAddressModal && <AddressModal addresses={myUser?.addresses||[]} onSave={handleSaveAddresses} onClose={()=>setShowAddressModal(false)} />}
@@ -4706,38 +4516,18 @@ function AppShell({ onSignOut, authUser }) {
           <div style={{ background:"linear-gradient(135deg,#2C3E50,#2d2d4e)",borderRadius:24,padding:"28px 24px",marginBottom:20,position:"relative",overflow:"hidden" }}>
             <div style={{ position:"absolute",top:-20,right:-20,width:120,height:120,borderRadius:"50%",background:"rgba(255,255,255,0.04)" }} />
             <div style={{ position:"absolute",bottom:-30,left:-10,width:80,height:80,borderRadius:"50%",background:"rgba(255,255,255,0.03)" }} />
-            <div style={{ fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",letterSpacing:1.5,marginBottom:8 }}>IN HAND WALLET</div>
+            <div style={{ fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",letterSpacing:1.5,marginBottom:8 }}>SALE EARNINGS</div>
             <div style={{ fontWeight:900,fontSize:42,color:"#fff",letterSpacing:-1,marginBottom:4 }}>${fmt(myUser?.walletBalance||0)}</div>
             <div style={{ fontSize:12,color:"rgba(255,255,255,0.45)" }}>{myUser?.username} · {myUser?.location}</div>
-            <div style={{ display:"flex",gap:10,marginTop:20 }}>
-              <button onClick={()=>setWalletAction("topup")} style={{ flex:1,background:"rgba(255,255,255,0.12)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:12,padding:"10px",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer" }}>+ Add Funds</button>
-              <button onClick={()=>setWalletAction("withdraw")} style={{ flex:1,background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:12,padding:"10px",color:"rgba(255,255,255,0.7)",fontWeight:700,fontSize:13,cursor:"pointer" }}>Withdraw</button>
-            </div>
           </div>
 
-          {/* Top-up / Withdraw inline */}
-          {walletAction==="topup" && (
-            <div style={{ background:"#fff",borderRadius:18,padding:"16px",marginBottom:16,border:"1px solid #E4EBF2",boxShadow:"0 2px 12px rgba(0,0,0,0.05)" }}>
-              <div style={{ fontWeight:800,fontSize:14,color:"#2C3E50",marginBottom:12 }}>Add Funds</div>
-              <div style={{ display:"flex",gap:8,marginBottom:12 }}>{[25,50,100,250].map(a=><button key={a} onClick={()=>setTopupAmount(String(a))} style={{ flex:1,background:topupAmount===String(a)?"#2C3E50":"#EEF2F7",border:"none",borderRadius:10,padding:"8px 0",fontWeight:700,fontSize:12,color:topupAmount===String(a)?"#fff":"#555",cursor:"pointer" }}>${a}</button>)}</div>
-              <input value={topupAmount} onChange={e=>setTopupAmount(e.target.value)} placeholder="Custom amount" type="number" style={{...IS,marginBottom:10}} />
-              <div style={{ display:"flex",gap:8 }}>
-                <button onClick={()=>setWalletAction(null)} style={{ flex:1,background:"#EEF2F7",border:"none",borderRadius:10,padding:"10px",fontWeight:700,fontSize:13,color:"#555",cursor:"pointer" }}>Cancel</button>
-                <button type="button" disabled={!topupAmount || parseFloat(topupAmount) <= 0} onClick={handleTopup} style={{ flex:2,background:"#2C3E50",border:"none",borderRadius:10,padding:"10px",fontWeight:800,fontSize:13,color:"#fff",cursor:!topupAmount || parseFloat(topupAmount) <= 0 ? "not-allowed" : "pointer",opacity:!topupAmount || parseFloat(topupAmount) <= 0 ? 0.5 : 1 }}>Add ${topupAmount||"0"}</button>
-              </div>
-            </div>
-          )}
-          {walletAction==="withdraw" && (
-            <div style={{ background:"#fff",borderRadius:18,padding:"16px",marginBottom:16,border:"1px solid #E4EBF2" }}>
-              <div style={{ fontWeight:800,fontSize:14,color:"#2C3E50",marginBottom:8 }}>Withdraw</div>
-              <div style={{ fontSize:12,color:"#aaa",marginBottom:12 }}>Funds will be sent to your default payment method</div>
-              <input value={topupAmount} onChange={e=>setTopupAmount(e.target.value)} placeholder={`Max $${fmt(myUser?.walletBalance||0)}`} type="number" style={{...IS,marginBottom:10}} />
-              <div style={{ display:"flex",gap:8 }}>
-                <button onClick={()=>setWalletAction(null)} style={{ flex:1,background:"#EEF2F7",border:"none",borderRadius:10,padding:"10px",fontWeight:700,fontSize:13,color:"#555",cursor:"pointer" }}>Cancel</button>
-                <button type="button" onClick={handleWithdraw} style={{ flex:2,background:"#2C3E50",border:"none",borderRadius:10,padding:"10px",fontWeight:800,fontSize:13,color:"#fff",cursor:"pointer" }}>Withdraw ${topupAmount||"0"}</button>
-              </div>
-            </div>
-          )}
+          <div style={{ background:"#f0fff8",border:"1.5px solid #00b89433",borderRadius:16,padding:"14px 16px",marginBottom:20,fontSize:12,color:"#555",lineHeight:1.55 }}>
+            <div style={{ fontWeight:800,color:"#00b894",marginBottom:6 }}>How your wallet works</div>
+            <div style={{ marginBottom:6 }}>• <strong>Buy figures:</strong> pay with card at checkout (Stripe).</div>
+            <div style={{ marginBottom:6 }}>• <strong>Get paid:</strong> after delivery, escrow releases to this balance.</div>
+            <div>• <strong>Trade sweeteners:</strong> you can spend earnings here if you have enough.</div>
+            <div style={{ marginTop:10,fontSize:11,color:"#888" }}>Bank payout (withdraw) — coming soon.</div>
+          </div>
 
           {/* Payment methods */}
           <div style={{ fontWeight:800,fontSize:15,color:"#2C3E50",marginBottom:12 }}>Payment Methods</div>
@@ -5346,7 +5136,7 @@ function AppShell({ onSignOut, authUser }) {
             {/* Wallet balance inline */}
             <div style={{ background:"rgba(255,255,255,0.08)",borderRadius:16,padding:"14px 16px",display:"flex",alignItems:"center",justifyContent:"space-between" }}>
               <div>
-                <div style={{ fontSize:10,color:"rgba(255,255,255,0.5)",fontWeight:700,letterSpacing:1 }}>WALLET BALANCE</div>
+                <div style={{ fontSize:10,color:"rgba(255,255,255,0.5)",fontWeight:700,letterSpacing:1 }}>SALE EARNINGS</div>
                 <div style={{ fontWeight:900,fontSize:26,color:"#fff",letterSpacing:-0.5 }}>${fmt(myUser?.walletBalance||0)}</div>
               </div>
               <button onClick={()=>setTab("wallet")} style={{ background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:12,padding:"8px 16px",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer" }}>Manage →</button>
@@ -5357,7 +5147,7 @@ function AppShell({ onSignOut, authUser }) {
           <div style={{ display:"flex",flexDirection:"column",gap:10,marginBottom:20 }}>
             {[
               { icon:"🗃️", label:"My Vault", sub:`${myCards.length} figures · $${myCards.reduce((s,f)=>s+f.value,0).toLocaleString()} total value`, tab:"vault", color:"#3A7BD5" },
-              { icon:"💰", label:"Wallet & Payments", sub:`Balance: $${fmt(myUser?.walletBalance||0)} · ${myUser?.paymentMethods?.length||0} payment methods`, tab:"wallet", color:"#00b894" },
+              { icon:"💰", label:"Wallet & Payments", sub:`Earnings: $${fmt(myUser?.walletBalance||0)} · Card at checkout`, tab:"wallet", color:"#00b894" },
               { icon:"📦", label:"Shipping & Tracking", sub:`${(db.shipments||[]).filter(s=>s.fromUser===activeUserId||s.toUser===activeUserId).length} shipments`, tab:"shipping", color:"#f0932b" },
               { icon:"", label:"My Ratings", sub:`${(db.ratings||[]).filter(r=>r.toUserId===activeUserId).length} reviews · avg ${myUser?.rating}`, tab:"account", color:"#f9ca24" },
             ].map(item => (

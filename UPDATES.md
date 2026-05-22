@@ -9,6 +9,12 @@
 
 Apply migration: `npx supabase db push --linked` (or run the SQL in the Supabase SQL editor).
 
+## Wallet model (launch)
+
+- **Purchases:** Card only via Stripe Checkout (no prepaid wallet top-up).
+- **Wallet balance:** Sale earnings after escrow release; optional for trade sweeteners only.
+- Removed demo **Add Funds** / **Withdraw** UI.
+
 ## Shipping provider — Shippo
 
 - Product uses **[Shippo](https://goshippo.com)** instead of EasyPost.
