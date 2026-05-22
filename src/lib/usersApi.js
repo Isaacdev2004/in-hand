@@ -20,3 +20,43 @@ export async function updateOwnUser(userId, patch) {
   if (Object.keys(row).length === 0) return { data: null, error: null };
   return supabase.from("users").update(row).eq("id", userId);
 }
+
+/** Update wallet and return the saved balance from Postgres. */
+export async function updateWalletBalance(userId, walletBalance) {
+  if (!supabase) return { data: null, error: null, skipped: true };
+  return supabase
+    .from("users")
+    .update({ wallet_balance: walletBalance })
+    .eq("id", userId)
+    .select("wallet_balance")
+    .maybeSingle();
+}
+
+/** Keep AppShell `db.users` in sync when the signed-in row was missing from the bulk load. */
+export function patchUserWalletInList(users, userId, walletBalance, authProfile) {
+  const list = users || [];
+  const idx = list.findIndex((u) => u.id === userId);
+  if (idx >= 0) {
+    return list.map((u) =>
+      u.id === userId ? { ...u, walletBalance } : u
+    );
+  }
+  return [
+    ...list,
+    {
+      id: userId,
+      username: authProfile?.username || "You",
+      avatar: authProfile?.avatar || "??",
+      walletBalance,
+      paymentMethods: [],
+      addresses: [],
+      wishlist: [],
+      rating: 5,
+      tradesCompleted: 0,
+      joined: new Date().toISOString().split("T")[0],
+      location: "",
+      verified: !!authProfile?.verified,
+      flagCount: 0,
+    },
+  ];
+}

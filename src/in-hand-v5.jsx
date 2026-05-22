@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { supabase } from "./lib/supabaseClient";
-import { fetchAppDatabaseShape } from "./lib/databaseToAppState";
+import { fetchAppDatabaseShape, userFromRow } from "./lib/databaseToAppState";
 import {
   createListing,
   updateListing,
@@ -26,7 +26,7 @@ import {
 import { startStripeCheckout } from "./lib/stripeCheckout";
 import { createShippingLabel } from "./lib/shippoLabel";
 import { ensureUserProfile } from "./lib/authSession";
-import { updateOwnUser } from "./lib/usersApi";
+import { updateOwnUser, updateWalletBalance, patchUserWalletInList } from "./lib/usersApi";
 import {
   BellIcon,
   figureInitials,
@@ -3521,8 +3521,17 @@ function AppShell({ onSignOut, authUser }) {
         try {
           const userId = authUser?.id || activeUserId;
           const fromCloud = await fetchAppDatabaseShape(supabase, userId);
+          let users = fromCloud.users || [];
+          if (authUser?.id && !users.some((u) => u.id === authUser.id)) {
+            const { data: row } = await supabase
+              .from("users")
+              .select("*")
+              .eq("id", authUser.id)
+              .maybeSingle();
+            if (row) users = [...users, userFromRow(row)];
+          }
           if (!cancelled) setDb({
-            users: fromCloud.users || [],
+            users,
             cards: fromCloud.cards || [],
             transactions: fromCloud.transactions || [],
             shipments: fromCloud.shipments || [],
@@ -4164,21 +4173,28 @@ function AppShell({ onSignOut, authUser }) {
 
   const handleTopup = async () => {
     const amt = parseFloat(topupAmount);
-    if (!amt || amt <= 0) return;
-    const nextBal = parseFloat(((myUser?.walletBalance || 0) + amt).toFixed(2));
+    if (!amt || amt <= 0) {
+      notify("Enter an amount greater than $0 (tap $25 / $50 / $100 or type a custom amount)");
+      return;
+    }
+    const currentBal = myUser?.walletBalance ?? 0;
+    let nextBal = parseFloat((currentBal + amt).toFixed(2));
     if (supabase) {
-      const { error } = await updateOwnUser(activeUserId, { walletBalance: nextBal });
+      const { data, error } = await updateWalletBalance(activeUserId, nextBal);
       if (error) {
         console.error("In Hand: wallet top-up failed", error);
-        notify("❌ Could not save wallet to Supabase");
+        notify(`❌ Could not save wallet: ${error.message || "check you are signed in"}`);
         return;
       }
+      if (!data) {
+        notify("❌ Profile not found — sign out and sign in again");
+        return;
+      }
+      nextBal = Number(data.wallet_balance);
     }
     setDb((d) => ({
       ...d,
-      users: d.users.map((u) =>
-        u.id === activeUserId ? { ...u, walletBalance: nextBal } : u
-      ),
+      users: patchUserWalletInList(d.users, activeUserId, nextBal, authUser),
     }));
     notify(`✅ $${fmt(amt)} added to wallet`);
     setTopupAmount("");
@@ -4187,21 +4203,32 @@ function AppShell({ onSignOut, authUser }) {
 
   const handleWithdraw = async () => {
     const amt = parseFloat(topupAmount);
-    if (!amt || amt > (myUser?.walletBalance || 0)) return;
-    const nextBal = parseFloat(((myUser?.walletBalance || 0) - amt).toFixed(2));
+    if (!amt || amt <= 0) {
+      notify("Enter an amount to withdraw");
+      return;
+    }
+    const currentBal = myUser?.walletBalance ?? 0;
+    if (amt > currentBal) {
+      notify(`You only have $${fmt(currentBal)} available`);
+      return;
+    }
+    let nextBal = parseFloat((currentBal - amt).toFixed(2));
     if (supabase) {
-      const { error } = await updateOwnUser(activeUserId, { walletBalance: nextBal });
+      const { data, error } = await updateWalletBalance(activeUserId, nextBal);
       if (error) {
         console.error("In Hand: wallet withdraw failed", error);
-        notify("❌ Could not save wallet to Supabase");
+        notify(`❌ Could not save wallet: ${error.message || "check you are signed in"}`);
         return;
       }
+      if (!data) {
+        notify("❌ Profile not found — sign out and sign in again");
+        return;
+      }
+      nextBal = Number(data.wallet_balance);
     }
     setDb((d) => ({
       ...d,
-      users: d.users.map((u) =>
-        u.id === activeUserId ? { ...u, walletBalance: nextBal } : u
-      ),
+      users: patchUserWalletInList(d.users, activeUserId, nextBal, authUser),
     }));
     notify(`✅ $${fmt(amt)} withdrawn`);
     setTopupAmount("");
@@ -4696,7 +4723,7 @@ function AppShell({ onSignOut, authUser }) {
               <input value={topupAmount} onChange={e=>setTopupAmount(e.target.value)} placeholder="Custom amount" type="number" style={{...IS,marginBottom:10}} />
               <div style={{ display:"flex",gap:8 }}>
                 <button onClick={()=>setWalletAction(null)} style={{ flex:1,background:"#EEF2F7",border:"none",borderRadius:10,padding:"10px",fontWeight:700,fontSize:13,color:"#555",cursor:"pointer" }}>Cancel</button>
-                <button onClick={handleTopup} style={{ flex:2,background:"#2C3E50",border:"none",borderRadius:10,padding:"10px",fontWeight:800,fontSize:13,color:"#fff",cursor:"pointer" }}>Add ${topupAmount||"0"}</button>
+                <button type="button" disabled={!topupAmount || parseFloat(topupAmount) <= 0} onClick={handleTopup} style={{ flex:2,background:"#2C3E50",border:"none",borderRadius:10,padding:"10px",fontWeight:800,fontSize:13,color:"#fff",cursor:!topupAmount || parseFloat(topupAmount) <= 0 ? "not-allowed" : "pointer",opacity:!topupAmount || parseFloat(topupAmount) <= 0 ? 0.5 : 1 }}>Add ${topupAmount||"0"}</button>
               </div>
             </div>
           )}

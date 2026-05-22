@@ -10,7 +10,7 @@ function msgTs(iso) {
   return s.length >= 16 ? s.slice(0, 16) : s;
 }
 
-function userFromRow(r) {
+export function userFromRow(r) {
   if (!r) return r;
   return {
     id: r.id,
