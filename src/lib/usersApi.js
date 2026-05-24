@@ -17,6 +17,7 @@ export async function updateOwnUser(userId, patch) {
   if (patch.rating !== undefined) row.rating = patch.rating;
   if (patch.tradesCompleted !== undefined) row.trades_completed = patch.tradesCompleted;
   if (patch.flagCount !== undefined) row.flag_count = patch.flagCount;
+  if (patch.verified !== undefined) row.verified = !!patch.verified;
   if (Object.keys(row).length === 0) return { data: null, error: null };
   return supabase.from("users").update(row).eq("id", userId);
 }

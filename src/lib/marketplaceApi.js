@@ -164,6 +164,16 @@ export async function insertDispute(dispute) {
   return supabase.from("disputes").insert(disputeToRow(dispute));
 }
 
+export async function updateDisputeById(disputeId, patch) {
+  if (!supabase) return { data: null, error: null, skipped: true };
+  const row = {};
+  if (patch.status !== undefined) row.status = patch.status;
+  if (patch.resolution !== undefined) row.resolution = patch.resolution;
+  if (patch.adminNote !== undefined) row.admin_note = patch.adminNote;
+  if (patch.resolvedAt !== undefined) row.resolved_at = patch.resolvedAt;
+  return supabase.from("disputes").update(row).eq("id", disputeId);
+}
+
 export async function insertRating(rating) {
   if (!supabase) return { data: null, error: null, skipped: true };
   return supabase.from("ratings").insert(ratingToRow(rating));

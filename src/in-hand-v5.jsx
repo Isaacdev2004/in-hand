@@ -17,6 +17,7 @@ import {
   insertChatMessage,
   updateConversationFlags,
   insertDispute,
+  updateDisputeById,
   insertRating,
   tryReleaseEscrow,
   insertNotification,
@@ -2881,14 +2882,15 @@ function ShareModal({ card, owner, onClose, onOpenListingVideo }) {
 }
 
 // ─── EDIT PROFILE MODAL ───────────────────────────────────────────────────────
-function EditProfileModal({ user, onSave, onClose }) {
+function EditProfileModal({ user, initialTab = "profile", onSave, onExportData, onDeactivate, onDeleteAccount, onClose }) {
   const [form, setForm] = useState({
     username:  user.username  || "",
     avatar:    user.avatar    || "🦖",
     location:  user.location  || "",
     wishlist:  user.wishlist?.join(", ") || "",
   });
-  const [tab, setTab] = useState("profile"); // profile | avatar | wishlist | danger
+  const [tab, setTab] = useState(initialTab);
+  useEffect(() => { setTab(initialTab); }, [initialTab]);
   const setF = (k,v) => setForm(f=>({...f,[k]:v}));
 
   const handleSave = () => {
@@ -3030,21 +3032,21 @@ function EditProfileModal({ user, onSave, onClose }) {
             <div style={{ background:"#fff",borderRadius:16,padding:"16px",border:"1px solid #E4EBF2",marginBottom:10 }}>
               <div style={{ fontWeight:700,fontSize:14,color:"#2C3E50",marginBottom:4 }}>Deactivate Account</div>
               <div style={{ fontSize:12,color:"#aaa",marginBottom:12 }}>Your listings will be hidden but your account data is preserved. You can reactivate anytime.</div>
-              <button onClick={()=>{ onClose(); }} style={{ background:"#fff8e6",border:"2px solid #f9ca24",borderRadius:10,padding:"9px 18px",fontSize:12,fontWeight:700,color:"#f0932b",cursor:"pointer" }}>Deactivate</button>
+              <button type="button" onClick={() => { onDeactivate?.(); onClose(); }} style={{ background:"#fff8e6",border:"2px solid #f9ca24",borderRadius:10,padding:"9px 18px",fontSize:12,fontWeight:700,color:"#f0932b",cursor:"pointer" }}>Deactivate</button>
             </div>
 
             {/* Delete */}
             <div style={{ background:"#fff",borderRadius:16,padding:"16px",border:"1px solid #E4EBF2",marginBottom:10 }}>
               <div style={{ fontWeight:700,fontSize:14,color:"#ff6b6b",marginBottom:4 }}>Delete Account</div>
               <div style={{ fontSize:12,color:"#aaa",marginBottom:12 }}>Permanently deletes your account, all listings, and transaction history. This cannot be undone.</div>
-              <button onClick={()=>{ onClose(); }} style={{ background:"#fff0f0",border:"2px solid #ff6b6b",borderRadius:10,padding:"9px 18px",fontSize:12,fontWeight:700,color:"#ff6b6b",cursor:"pointer" }}>Delete Account</button>
+              <button type="button" onClick={() => { if (window.confirm("Permanently delete your account and all listings? This cannot be undone.")) { onDeleteAccount?.(); onClose(); } }} style={{ background:"#fff0f0",border:"2px solid #ff6b6b",borderRadius:10,padding:"9px 18px",fontSize:12,fontWeight:700,color:"#ff6b6b",cursor:"pointer" }}>Delete Account</button>
             </div>
 
             {/* Export data */}
             <div style={{ background:"#fff",borderRadius:16,padding:"16px",border:"1px solid #E4EBF2" }}>
               <div style={{ fontWeight:700,fontSize:14,color:"#2C3E50",marginBottom:4 }}>Export My Data</div>
               <div style={{ fontSize:12,color:"#aaa",marginBottom:12 }}>Download a copy of all your data — listings, transactions, messages, and ratings.</div>
-              <button onClick={()=>{ onClose(); }} style={{ background:"#EAF1FA",border:"2px solid #3A7BD5",borderRadius:10,padding:"9px 18px",fontSize:12,fontWeight:700,color:"#3A7BD5",cursor:"pointer" }}>📥 Export Data</button>
+              <button type="button" onClick={() => { onExportData?.(); }} style={{ background:"#EAF1FA",border:"2px solid #3A7BD5",borderRadius:10,padding:"9px 18px",fontSize:12,fontWeight:700,color:"#3A7BD5",cursor:"pointer" }}>📥 Export Data</button>
             </div>
           </div>
         )}
@@ -3073,13 +3075,6 @@ function NotificationCenter({ notifications, onMarkRead, onMarkAllRead, onClose,
           </div>
         </div>
 
-        {/* Dev note */}
-        <div style={{ background:"#EAF1FA",padding:"10px 20px",display:"flex",gap:8,alignItems:"center",flexShrink:0 }}>
-          <span style={{ fontSize:14 }}>⚡</span>
-          <div style={{ fontSize:10,color:"#3A7BD5",fontWeight:600,lineHeight:1.4 }}>
-            Dev: connect Firebase Cloud Messaging (FCM) to push these to the user's device. Each event triggers a Supabase Edge Function.
-          </div>
-        </div>
 
         {/* Notification list */}
         <div style={{ flex:1,overflowY:"auto",padding:"12px 16px 40px" }}>
@@ -3346,7 +3341,7 @@ function AppShell({ onSignOut, authUser }) {
   const [liked, setLiked] = useState([]);
   const [toast, setToast] = useState(null);
   const [selectedOffer, setSelectedOffer] = useState(null);
-  const [showAddCard, setShowAddCard] = useState(false);
+  const [showAddUser, setShowAddUser] = useState(false);
   const [checkoutCard, setCheckoutCard] = useState(null);
   const [sweetenerTrade, setSweetenerTrade] = useState(null);
   const [trackingModal, setTrackingModal] = useState(null);
@@ -3364,6 +3359,8 @@ function AppShell({ onSignOut, authUser }) {
   const [shareCard, setShareCard] = useState(null);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
+  const [editProfileTab, setEditProfileTab] = useState("profile");
+  const ratingsSectionRef = useRef(null);
   const [showPackagingGuide, setShowPackagingGuide] = useState(false);
 
   const myNotifications = (db.notifications||[]);
@@ -3539,6 +3536,144 @@ function AppShell({ onSignOut, authUser }) {
   useEffect(() => { if(myTradeable.length&&!selectedOffer) setSelectedOffer(myTradeable[0]); }, [myTradeable.length]);
   const notify = msg => { setToast(stripToastEmoji(msg)); setTimeout(()=>setToast(null),2500); };
 
+  const openEditProfile = (tabId = "profile") => {
+    setEditProfileTab(tabId);
+    setShowEditProfile(true);
+  };
+
+  const handleExportMyData = () => {
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      user: myUser,
+      listings: myCards,
+      transactions: myTxns,
+      shipments: (db.shipments || []).filter((s) => s.fromUser === activeUserId || s.toUser === activeUserId),
+      ratings: (db.ratings || []).filter((r) => r.fromUserId === activeUserId || r.toUserId === activeUserId),
+      disputes: (db.disputes || []).filter((d) => d.raisedBy === activeUserId || d.againstUserId === activeUserId),
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `in-hand-export-${activeUserId}-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    notify("📥 Data export downloaded");
+  };
+
+  const handleDeactivateAccount = async () => {
+    for (const card of myCards) {
+      if (supabase) await deleteListing(card.id);
+    }
+    setDb((d) => ({
+      ...d,
+      cards: d.cards.filter((c) => c.ownerId !== activeUserId),
+    }));
+    notify("Account deactivated — your listings are hidden");
+  };
+
+  const handleDeleteAccount = async () => {
+    await handleDeactivateAccount();
+    notify("Account deletion requested — signing out");
+    onSignOut();
+  };
+
+  const handleAdminToggleVerified = async (userId, verified) => {
+    if (supabase) {
+      const { error } = await supabase.from("users").update({ verified }).eq("id", userId);
+      if (error) {
+        console.error("In Hand: verified toggle failed", error);
+        notify("❌ Could not update verified badge");
+        return;
+      }
+    }
+    setDb((d) => ({
+      ...d,
+      users: d.users.map((u) => (u.id === userId ? { ...u, verified } : u)),
+    }));
+    notify(verified ? "✓ Seller verified" : "Verified badge removed");
+  };
+
+  const handleAdminResolveDispute = async (d, kind) => {
+    const resolvedAt = new Date().toISOString().split("T")[0];
+    const configs = {
+      usps_claim: {
+        resolution: "usps_claim",
+        adminNote: "USPS insurance claim initiated. Buyer keeps item. Seller files claim at usps.com/help/claims.htm.",
+        txnStatus: "completed",
+        releaseFunds: true,
+        disputeFrozen: false,
+      },
+      refund_full: {
+        resolution: "refund_full",
+        adminNote: "Full refund issued by admin.",
+        txnStatus: "refunded",
+        releaseFunds: false,
+        disputeFrozen: false,
+      },
+      no_action: {
+        resolution: "no_action",
+        adminNote: "Dispute rejected — funds released to seller.",
+        txnStatus: "completed",
+        releaseFunds: true,
+        disputeFrozen: false,
+      },
+    };
+    const cfg = configs[kind];
+    if (!cfg) return;
+
+    if (supabase) {
+      const { error: dErr } = await updateDisputeById(d.id, {
+        status: "resolved",
+        resolution: cfg.resolution,
+        adminNote: cfg.adminNote,
+        resolvedAt,
+      });
+      if (dErr) {
+        console.error("In Hand: dispute resolve failed", dErr);
+        notify("❌ Could not save dispute resolution");
+        return;
+      }
+      const { error: tErr } = await updateTransaction(d.txnId, { status: cfg.txnStatus });
+      if (tErr) console.error("In Hand: txn update on dispute resolve", tErr);
+      if (d.shipmentId) {
+        await updateShipmentById(d.shipmentId, {
+          disputeFrozen: cfg.disputeFrozen,
+          fundsReleased: cfg.releaseFunds,
+        });
+        if (cfg.releaseFunds && d.disputeType !== "trade") {
+          await tryReleaseEscrow(d.shipmentId, false);
+        }
+      }
+    }
+
+    setDb((db) => ({
+      ...db,
+      disputes: db.disputes.map((x) =>
+        x.id === d.id
+          ? { ...x, status: "resolved", resolution: cfg.resolution, resolvedAt, adminNote: cfg.adminNote }
+          : x
+      ),
+      transactions: db.transactions.map((t) =>
+        t.id === d.txnId ? { ...t, status: cfg.txnStatus } : t
+      ),
+      shipments: d.shipmentId
+        ? db.shipments.map((s) =>
+            s.id === d.shipmentId
+              ? { ...s, disputeFrozen: cfg.disputeFrozen, fundsReleased: cfg.releaseFunds || s.fundsReleased }
+              : s
+          )
+        : db.shipments,
+    }));
+
+    const msgs = {
+      usps_claim: "📮 USPS claim resolution applied",
+      refund_full: "✅ Dispute resolved — full refund issued",
+      no_action: "Dispute closed — funds released to seller",
+    };
+    notify(msgs[kind]);
+  };
+
   const reloadFromSupabase = async () => {
     if (!supabase) return;
     try {
@@ -3572,6 +3707,52 @@ function AppShell({ onSignOut, authUser }) {
 
   const handleSwipe = (dir,cardId) => { const c=enriched.find(x=>x.id===cardId); if(dir==="yes"&&c){setLiked(l=>[...l,c]);notify("🤝 Trade proposed!");} setSwipeCards(p=>p.filter(id=>id!==cardId)); };
   const launchSwipe = list => { setSwipeCards(list.map(c=>c.id).reverse()); setTab("swipe"); };
+
+  const handleAddUser = async (user) => {
+    if (supabase) {
+      const row = {
+        id: user.id,
+        username: user.username,
+        avatar: user.avatar,
+        rating: user.rating ?? 5,
+        trades_completed: user.tradesCompleted ?? 0,
+        joined: user.joined,
+        location: user.location || "",
+        wishlist: user.wishlist || [],
+        wallet_balance: user.walletBalance ?? 0,
+        payment_methods: user.paymentMethods || [],
+        addresses: user.addresses || [],
+        flag_count: 0,
+        verified: !!user.verified,
+      };
+      const { error } = await supabase.from("users").insert(row);
+      if (error) {
+        console.error("In Hand: create user failed", error);
+        notify("❌ Could not create user in Supabase");
+        return;
+      }
+    }
+    setDb((d) => ({ ...d, users: [...d.users, user] }));
+    notify("✅ User created");
+  };
+
+  const handleAdminDeleteUser = async (userId) => {
+    if (userId === activeUserId) {
+      notify("Cannot delete your own account here — use Account → Privacy");
+      return;
+    }
+    if (!window.confirm("Delete this user and their listings from the app database?")) return;
+    if (supabase) {
+      await supabase.from("users").delete().eq("id", userId);
+    }
+    setDb((d) => ({
+      ...d,
+      users: d.users.filter((u) => u.id !== userId),
+      cards: d.cards.filter((c) => c.ownerId !== userId),
+      transactions: d.transactions.filter((t) => t.buyerId !== userId && t.sellerId !== userId),
+    }));
+    notify("User removed");
+  };
 
   const handleAddCard = async (card) => {
     if (supabase) {
@@ -4052,10 +4233,6 @@ function AppShell({ onSignOut, authUser }) {
     if (id !== "messages") setActiveThread(null);
   };
 
-  useEffect(() => {
-    if (tab === "db" || tab === "emails") setTab("browse");
-  }, [tab]);
-
   const txnColor = t => t.type==="purchase"?"#ff6b6b":(t.type==="sale"||t.type==="topup")?"#00b894":"#3A7BD5";
   const txnSign  = t => t.buyerId===activeUserId?"-":"+";
   const txnAmt   = t => t.buyerId===activeUserId?t.amount:t.net;
@@ -4069,11 +4246,22 @@ function AppShell({ onSignOut, authUser }) {
 
       {toast && <div className="inhand-toast">{toast}</div>}
       {showAddCard && <AddCardModal ownerId={activeUserId} onSave={handleAddCard} onClose={()=>setShowAddCard(false)} />}
+      {showAddUser && <AddUserModal onSave={handleAddUser} onClose={()=>setShowAddUser(false)} />}
       {checkoutCard && <CheckoutModal card={checkoutCard} seller={getUser(checkoutCard.ownerId)} onPayWithCard={()=>handlePurchaseWithCard(checkoutCard)} onClose={()=>setCheckoutCard(null)} />}
       {sweetenerTrade && <TradeSweetenerModal myFigure={sweetenerTrade.myFigure} theirFigure={sweetenerTrade.theirCard} theirOwner={getUser(sweetenerTrade.theirCard.ownerId)} myUser={myUser} onConfirm={handleSweetenerConfirm} onClose={()=>setSweetenerTrade(null)} />}
       {marketModal && <MarketValueModal card={marketModal} onClose={()=>setMarketModal(null)} />}
       {showAddressModal && <AddressModal addresses={myUser?.addresses||[]} onSave={handleSaveAddresses} onClose={()=>setShowAddressModal(false)} />}
-      {showEditProfile && <EditProfileModal user={myUser} onSave={handleSaveProfile} onClose={()=>setShowEditProfile(false)} />}
+      {showEditProfile && (
+        <EditProfileModal
+          user={myUser}
+          initialTab={editProfileTab}
+          onSave={handleSaveProfile}
+          onExportData={handleExportMyData}
+          onDeactivate={handleDeactivateAccount}
+          onDeleteAccount={handleDeleteAccount}
+          onClose={() => setShowEditProfile(false)}
+        />
+      )}
       {disputeModal && <DisputeModal txn={disputeModal.txn} shipment={disputeModal.shipment} disputeKind={disputeModal.disputeKind || "purchase"} onSubmit={handleSubmitDispute} onClose={()=>setDisputeModal(null)} />}
       {ratingModal && <RatingModal txn={ratingModal.txn} otherUser={ratingModal.otherUser} isBuyer={ratingModal.isBuyer} onSubmit={handleSubmitRating} onClose={()=>setRatingModal(null)} />}
       {showPackagingGuide && <PackagingGuideModal figureValue={addTrackingFor?.amount||0} onConfirm={()=>setShowPackagingGuide(false)} onClose={()=>setShowPackagingGuide(false)} />}
@@ -4541,8 +4729,8 @@ function AppShell({ onSignOut, authUser }) {
               {pm.isDefault&&<span style={{ fontSize:9,background:"#e8fff6",color:"#00b894",borderRadius:6,padding:"2px 8px",fontWeight:700 }}>DEFAULT</span>}
             </div>
           ))}
-          <div onClick={()=>notify("💳 Add payment method coming soon!")} style={{ border:"1.5px dashed #ddd",borderRadius:16,padding:"14px 16px",marginBottom:24,display:"flex",alignItems:"center",gap:10,cursor:"pointer",color:"#aaa" }}>
-            <span style={{ fontSize:20 }}>➕</span><span style={{ fontSize:13,fontWeight:600 }}>Add payment method</span>
+          <div style={{ background:"#EAF1FA",borderRadius:14,padding:"14px 16px",marginBottom:24,fontSize:12,color:"#555",lineHeight:1.55 }}>
+            Purchases use <strong>Stripe Checkout</strong> — enter your card when you buy a listing. Saved cards here are for display only until Stripe Customer is wired.
           </div>
 
           {/* Transaction history */}
@@ -4850,7 +5038,7 @@ function AppShell({ onSignOut, authUser }) {
           <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16 }}>
             <div style={{ display:"flex",alignItems:"center",gap:10 }}>
               <button onClick={()=>setTab("account")} style={{ background:"#E4EBF2",border:"none",borderRadius:10,padding:"6px 12px",fontSize:12,fontWeight:700,color:"#555",cursor:"pointer" }}>← Account</button>
-              <div style={{ fontWeight:800,fontSize:18,color:"#2C3E50" }}>🗄️ Database</div>
+              <div style={{ fontWeight:800,fontSize:18,color:"#2C3E50" }}>🛡️ Admin Dashboard</div>
             </div>
             <button
               type="button"
@@ -4878,6 +5066,9 @@ function AppShell({ onSignOut, authUser }) {
           </div>
           {adminView==="users" && (
             <div>
+              <div style={{ display:"flex",justifyContent:"flex-end",marginBottom:12 }}>
+                <button type="button" onClick={()=>setShowAddUser(true)} style={{ background:"#2C3E50",border:"none",borderRadius:10,padding:"7px 14px",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer" }}>+ Add User</button>
+              </div>
               {db.users.map(user=>{ const uc=db.cards.filter(c=>c.ownerId===user.id); return (
                 <div key={user.id} style={{ background:"#fff",borderRadius:16,padding:"14px",boxShadow:"0 2px 10px rgba(0,0,0,0.05)",border:"1px solid #E4EBF2",marginBottom:10 }}>
                   <div style={{ display:"flex",alignItems:"center",gap:12 }}>
@@ -4896,7 +5087,12 @@ function AppShell({ onSignOut, authUser }) {
                         {user.flagCount>0 && <span style={{ fontSize:10,background:"#fff0f0",color:"#ff6b6b",borderRadius:6,padding:"1px 7px",fontWeight:700 }}>🚫 {user.flagCount} flags</span>}
                       </div>
                     </div>
-                    {user.id!==activeUserId&&!supabase&&<button onClick={()=>setDb(d=>({users:d.users.filter(u=>u.id!==user.id),cards:d.cards.filter(c=>c.ownerId!==user.id),transactions:d.transactions.filter(t=>t.buyerId!==user.id&&t.sellerId!==user.id)}))} style={{ background:"#fff0f0",border:"none",borderRadius:8,padding:"5px 10px",fontSize:11,color:"#ff6b6b",cursor:"pointer",fontWeight:700 }}>del</button>}
+                    <div style={{ display:"flex",flexDirection:"column",gap:6,flexShrink:0 }}>
+                      <button type="button" onClick={()=>handleAdminToggleVerified(user.id, !user.verified)} style={{ background:user.verified?"#e8fff6":"#EEF2F7",border:"none",borderRadius:8,padding:"5px 10px",fontSize:10,fontWeight:700,color:user.verified?"#00b894":"#555",cursor:"pointer" }}>{user.verified?"✓ Verified":"Mark verified"}</button>
+                      {user.id!==activeUserId && (
+                        <button type="button" onClick={()=>handleAdminDeleteUser(user.id)} style={{ background:"#fff0f0",border:"none",borderRadius:8,padding:"5px 10px",fontSize:11,color:"#ff6b6b",cursor:"pointer",fontWeight:700 }}>del</button>
+                      )}
+                    </div>
                   </div>
                 </div>
               );})}
@@ -4977,12 +5173,12 @@ function AppShell({ onSignOut, authUser }) {
                             <div style={{ background:"#fff8e6",border:"1.5px solid #f9ca24",borderRadius:10,padding:"10px 12px",marginBottom:4 }}>
                               <div style={{ fontWeight:700,fontSize:11,color:"#f0932b",marginBottom:4 }}>💔 Damage Claim Protocol</div>
                               <div style={{ fontSize:10,color:"#888",lineHeight:1.5,marginBottom:6 }}>1. Ask buyer to submit photos of figure + packaging + label<br/>2. Confirm damage is transit-related (not pre-existing)<br/>3. Seller files USPS claim at <strong>usps.com/help/claims.htm</strong><br/>4. USPS reimburses seller within 5–10 business days</div>
-                              <button onClick={()=>{ setDb(db=>({...db, disputes:db.disputes.map(x=>x.id===d.id?{...x,status:"resolved",resolution:"usps_claim",resolvedAt:new Date().toISOString().split("T")[0],adminNote:"USPS insurance claim initiated. Buyer keeps item. Seller files claim at usps.com/help/claims.htm."}:x), transactions:db.transactions.map(t=>t.id===d.txnId?{...t,status:"completed"}:t), shipments:d.shipmentId?db.shipments.map(s=>s.id===d.shipmentId?{...s,disputeFrozen:false,fundsReleased:true}:s):db.shipments })); notify("📮 USPS claim resolution applied — seller files claim"); }} style={{ width:"100%",background:"#fff8e6",border:"2px solid #f9ca24",borderRadius:8,padding:"7px",fontWeight:700,fontSize:11,color:"#f0932b",cursor:"pointer" }}>📮 Resolve: USPS Insurance Claim</button>
+                              <button type="button" onClick={() => handleAdminResolveDispute(d, "usps_claim")} style={{ width:"100%",background:"#fff8e6",border:"2px solid #f9ca24",borderRadius:8,padding:"7px",fontWeight:700,fontSize:11,color:"#f0932b",cursor:"pointer" }}>📮 Resolve: USPS Insurance Claim</button>
                             </div>
                           )}
                           <div style={{ display:"flex",gap:6 }}>
-                            <button onClick={()=>{ setDb(db=>({...db, disputes:db.disputes.map(x=>x.id===d.id?{...x,status:"resolved",resolution:"refund_full",resolvedAt:new Date().toISOString().split("T")[0],adminNote:"Full refund issued by admin."}:x), transactions:db.transactions.map(t=>t.id===d.txnId?{...t,status:"refunded"}:t), shipments:d.shipmentId?db.shipments.map(s=>s.id===d.shipmentId?{...s,disputeFrozen:false}:s):db.shipments })); notify("✅ Dispute resolved — full refund issued"); }} style={{ flex:1,background:"#f0fff8",border:"2px solid #00b894",borderRadius:10,padding:"7px",fontWeight:700,fontSize:11,color:"#00b894",cursor:"pointer" }}>✅ Full Refund</button>
-                            <button onClick={()=>{ setDb(db=>({...db, disputes:db.disputes.map(x=>x.id===d.id?{...x,status:"resolved",resolution:"no_action",resolvedAt:new Date().toISOString().split("T")[0],adminNote:"Dispute rejected — funds released to seller."}:x), shipments:d.shipmentId?db.shipments.map(s=>s.id===d.shipmentId?{...s,disputeFrozen:false,fundsReleased:true}:s):db.shipments, transactions:db.transactions.map(t=>t.id===d.txnId?{...t,status:"completed"}:t) })); notify("Dispute closed — funds released to seller"); }} style={{ flex:1,background:"#fff0f0",border:"2px solid #ff6b6b",borderRadius:10,padding:"7px",fontWeight:700,fontSize:11,color:"#ff6b6b",cursor:"pointer" }}>❌ Reject</button>
+                            <button type="button" onClick={() => handleAdminResolveDispute(d, "refund_full")} style={{ flex:1,background:"#f0fff8",border:"2px solid #00b894",borderRadius:10,padding:"7px",fontWeight:700,fontSize:11,color:"#00b894",cursor:"pointer" }}>✅ Full Refund</button>
+                            <button type="button" onClick={() => handleAdminResolveDispute(d, "no_action")} style={{ flex:1,background:"#fff0f0",border:"2px solid #ff6b6b",borderRadius:10,padding:"7px",fontWeight:700,fontSize:11,color:"#ff6b6b",cursor:"pointer" }}>❌ Reject</button>
                           </div>
                         </div>
                       )}
@@ -5149,9 +5345,9 @@ function AppShell({ onSignOut, authUser }) {
               { icon:"🗃️", label:"My Vault", sub:`${myCards.length} figures · $${myCards.reduce((s,f)=>s+f.value,0).toLocaleString()} total value`, tab:"vault", color:"#3A7BD5" },
               { icon:"💰", label:"Wallet & Payments", sub:`Earnings: $${fmt(myUser?.walletBalance||0)} · Card at checkout`, tab:"wallet", color:"#00b894" },
               { icon:"📦", label:"Shipping & Tracking", sub:`${(db.shipments||[]).filter(s=>s.fromUser===activeUserId||s.toUser===activeUserId).length} shipments`, tab:"shipping", color:"#f0932b" },
-              { icon:"", label:"My Ratings", sub:`${(db.ratings||[]).filter(r=>r.toUserId===activeUserId).length} reviews · avg ${myUser?.rating}`, tab:"account", color:"#f9ca24" },
+              { icon:"⭐", label:"My Ratings", sub:`${(db.ratings||[]).filter(r=>r.toUserId===activeUserId).length} reviews · avg ${myUser?.rating}`, action:()=>{ setTab("account"); setTimeout(()=>ratingsSectionRef.current?.scrollIntoView({ behavior:"smooth", block:"start" }), 80); }, color:"#f9ca24" },
             ].map(item => (
-              <div key={item.tab} onClick={()=>setTab(item.tab)} style={{ background:"#fff",borderRadius:18,padding:"14px 16px",boxShadow:"0 2px 10px rgba(0,0,0,0.05)",border:"1px solid #E4EBF2",display:"flex",alignItems:"center",gap:14,cursor:"pointer",transition:"transform 0.15s" }}
+              <div key={item.label} onClick={item.action || (()=>setTab(item.tab))} style={{ background:"#fff",borderRadius:18,padding:"14px 16px",boxShadow:"0 2px 10px rgba(0,0,0,0.05)",border:"1px solid #E4EBF2",display:"flex",alignItems:"center",gap:14,cursor:"pointer",transition:"transform 0.15s" }}
                 onMouseDown={e=>e.currentTarget.style.transform="scale(0.98)"}
                 onMouseUp={e=>e.currentTarget.style.transform="scale(1)"}
               >
@@ -5170,13 +5366,15 @@ function AppShell({ onSignOut, authUser }) {
           <div style={{ background:"#fff",borderRadius:18,overflow:"hidden",boxShadow:"0 2px 10px rgba(0,0,0,0.05)",border:"1px solid #E4EBF2",marginBottom:20 }}>
             {[
               { icon:"💸", label:"Fees & Pricing",     sub:"Sales 5% · Trades $2/party · Shipping split", action:()=>setTab("fees") },
-              { icon:"✏️", label:"Edit Profile",        sub:`${myUser?.username} · ${myUser?.location||"Location not set"}`, action:()=>setShowEditProfile(true) },
-              { icon:"🎭", label:"Change Avatar",       sub:`Current: ${myUser?.avatar}`, action:()=>{ setShowEditProfile(true); } },
-              { icon:"⭐", label:"Wishlist Tags",       sub:myUser?.wishlist?.length ? myUser.wishlist.map(t=>`#${t}`).join(" ") : "None set — tap to add", action:()=>setShowEditProfile(true) },
+              { icon:"✏️", label:"Edit Profile",        sub:`${myUser?.username} · ${myUser?.location||"Location not set"}`, action:()=>openEditProfile("profile") },
+              { icon:"🎭", label:"Change Avatar",       sub:`Current: ${myUser?.avatar}`, action:()=>openEditProfile("avatar") },
+              { icon:"⭐", label:"Wishlist Tags",       sub:myUser?.wishlist?.length ? myUser.wishlist.map(t=>`#${t}`).join(" ") : "None set — tap to add", action:()=>openEditProfile("wishlist") },
               { icon:"📍", label:"Shipping Addresses",  sub: myUser?.addresses?.length ? myUser.addresses.map(a=>`${a.label}: ${a.street}`).join(" · ") : "No addresses saved", action:()=>setShowAddressModal(true) },
               { icon:"🔔", label:"Notifications",       sub:"Trade alerts, delivery updates", action:()=>setShowNotifications(true) },
-              { icon:"🔒", label:"Privacy & Security",  sub:"PIN, 2FA, delete account", action:()=>setShowEditProfile(true) },
+              { icon:"🔒", label:"Privacy & Security",  sub:"Export data, deactivate, delete account", action:()=>openEditProfile("danger") },
               { icon:"📋", label:"Transaction History", sub:`${myTxns.length} transactions`, action:()=>setTab("wallet") },
+              { icon:"🛡️", label:"Admin Dashboard",     sub:"Users, listings, disputes, ops tools", action:()=>setTab("db") },
+              { icon:"📧", label:"Email Templates",     sub:"Transactional email previews", action:()=>setTab("emails") },
             ].map((item,i,arr) => (
               <div key={item.label} onClick={item.action} style={{ display:"flex",alignItems:"center",gap:12,padding:"14px 16px",borderBottom:i<arr.length-1?"1px solid #EEF2F7":"none",cursor:"pointer" }}
                 onMouseEnter={e=>e.currentTarget.style.background="#fafafa"}
@@ -5195,7 +5393,7 @@ function AppShell({ onSignOut, authUser }) {
           {/* Received Ratings */}
           {(db.ratings||[]).filter(r=>r.toUserId===activeUserId).length > 0 && (
             <>
-              <div style={{ fontWeight:700,fontSize:12,color:"#bbb",letterSpacing:1,marginBottom:10 }}>YOUR RATINGS</div>
+              <div ref={ratingsSectionRef} style={{ fontWeight:700,fontSize:12,color:"#bbb",letterSpacing:1,marginBottom:10 }}>YOUR RATINGS</div>
               <div style={{ background:"#fff",borderRadius:18,overflow:"hidden",boxShadow:"0 2px 10px rgba(0,0,0,0.05)",border:"1px solid #E4EBF2",marginBottom:20 }}>
                 {(db.ratings||[]).filter(r=>r.toUserId===activeUserId).map((r,i,arr)=>{
                   const from = getUser(r.fromUserId);
