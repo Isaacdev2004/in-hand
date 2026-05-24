@@ -3341,6 +3341,7 @@ function AppShell({ onSignOut, authUser }) {
   const [liked, setLiked] = useState([]);
   const [toast, setToast] = useState(null);
   const [selectedOffer, setSelectedOffer] = useState(null);
+  const [showAddCard, setShowAddCard] = useState(false);
   const [showAddUser, setShowAddUser] = useState(false);
   const [checkoutCard, setCheckoutCard] = useState(null);
   const [sweetenerTrade, setSweetenerTrade] = useState(null);
