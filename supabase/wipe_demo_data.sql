@@ -8,17 +8,19 @@
 
 begin;
 
--- Demo user ids and figure ids from supabase/seed.sql
-with demo_users(id) as (values
+-- Temp tables holding the demo ids (a CTE only scopes to one statement,
+-- so we use temp tables that all DELETEs below can reference).
+create temp table demo_users (id text primary key) on commit drop;
+insert into demo_users (id) values
   ('u1'),('u2'),('u3'),('u4'),('u5'),
-  ('u6'),('u7'),('u8'),('u9'),('u10')
-), demo_listings(id) as (values
+  ('u6'),('u7'),('u8'),('u9'),('u10');
+
+create temp table demo_listings (id text primary key) on commit drop;
+insert into demo_listings (id) values
   ('c1'),('c2'),('c3'),('c4'),('c5'),
   ('c6'),('c7'),('c8'),('c9'),('c10'),
-  ('m1'),('m2'),('m3'),('m4')
-)
+  ('m1'),('m2'),('m3'),('m4');
 
--- Cascade-delete child tables first, then parents.
 -- chat_messages -> conversation_participants -> conversations
 delete from public.chat_messages
   where conversation_id in (
