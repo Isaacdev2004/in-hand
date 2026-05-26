@@ -1,5 +1,7 @@
+-- DEV ONLY — DO NOT RUN ON PRODUCTION.
 -- Optional: load demo data after 20260427120000_initial_schema.sql
 -- Run in SQL Editor (after the migration) if you want parity with the React mock seeds.
+-- For production cleanup, use supabase/wipe_demo_data.sql instead.
 
 -- Clear (dev only) — remove or comment this block if you want to keep existing data
 truncate table

@@ -253,46 +253,10 @@ function MarketValueModal({ card, onClose }) {
 
 
 // ─── SEED DATA ────────────────────────────────────────────────────────────────
-const SEED_USERS = [
-  { id: "u1", username: "VinylHunter_Rex",  avatar: "🦖", rating: 4.9, tradesCompleted: 47, joined: "2021-03-12", location: "New York, NY", verified: true, wishlist: ["G.I. Joe","vintage","hasbro"],    walletBalance: 1250.00, paymentMethods: [{ id:"pm1", type:"card", last4:"4242", brand:"Visa",       expiry:"12/26", isDefault:true  }, { id:"pm2", type:"card", last4:"5555", brand:"Mastercard", expiry:"09/25", isDefault:false }],
-    addresses: [
-      { id:"a1", label:"Home",  name:"Rex Hunter", street:"247 W 35th St", city:"New York",  state:"NY", zip:"10001", isDefault:true  },
-      { id:"a2", label:"Work",  name:"Rex Hunter", street:"1 Penn Plaza",  city:"New York",  state:"NY", zip:"10119", isDefault:false },
-    ]
-  },
-  { id: "u2", username: "RetroPlastic_Joe", avatar: "🎖️", rating: 4.7, tradesCompleted: 23, joined: "2022-01-05", location: "Chicago, IL",     wishlist: ["military","vintage"],             walletBalance: 340.00,  paymentMethods: [{ id:"pm3", type:"card", last4:"1234", brand:"Visa",       expiry:"03/27", isDefault:true  }] },
-  { id: "u3", username: "BotCollector88",   avatar: "🤖", rating: 5.0, tradesCompleted: 61, joined: "2020-08-19", location: "Austin, TX", verified: true, wishlist: ["transformers","boxed"],           walletBalance: 820.00,  paymentMethods: [{ id:"pm4", type:"paypal", email:"bot88@email.com",      isDefault:true  }] },
-  { id: "u4", username: "KastleGrayskull",  avatar: "🏰", rating: 4.8, tradesCompleted: 34, joined: "2021-11-30", location: "Los Angeles, CA", wishlist: ["motu","fantasy"],                 walletBalance: 95.50,   paymentMethods: [] },
-  { id: "u5", username: "DarkSideDave",     avatar: "🌌", rating: 4.6, tradesCompleted: 18, joined: "2023-02-14", location: "Seattle, WA",     wishlist: ["starwars","kenner"],              walletBalance: 2100.00, paymentMethods: [{ id:"pm5", type:"card", last4:"9999", brand:"Amex",       expiry:"07/28", isDefault:true  }] },
-  { id: "u6", username: "ShellShocked_NY",  avatar: "🐢", rating: 4.9, tradesCompleted: 55, joined: "2020-06-01", location: "Brooklyn, NY", verified: true, wishlist: ["tmnt","playmates"],               walletBalance: 560.00,  paymentMethods: [{ id:"pm6", type:"card", last4:"7777", brand:"Visa",       expiry:"11/26", isDefault:true  }] },
-  { id: "u7", username: "EvilLair_99",      avatar: "💀", rating: 4.5, tradesCompleted: 12, joined: "2023-07-22", location: "Denver, CO",      wishlist: ["villain","motu"],                 walletBalance: 75.00,   paymentMethods: [] },
-  { id: "u8", username: "CybertronVault",   avatar: "⚙️", rating: 4.8, tradesCompleted: 41, joined: "2021-05-10", location: "Detroit, MI",     wishlist: ["transformers","decepticon"],      walletBalance: 430.00,  paymentMethods: [{ id:"pm7", type:"paypal", email:"cybert@vault.com",     isDefault:true  }] },
-  { id: "u9", username: "NinjaArsenal",     avatar: "🥷", rating: 5.0, tradesCompleted: 29, joined: "2022-09-03", location: "Portland, OR",    wishlist: ["ninja","hasbro"],                 walletBalance: 190.00,  paymentMethods: [{ id:"pm8", type:"card", last4:"3344", brand:"Mastercard", expiry:"05/27", isDefault:true  }] },
-  { id: "u10",username: "GalaxySurfer",     avatar: "🚀", rating: 4.7, tradesCompleted: 37, joined: "2021-12-25", location: "Houston, TX",     wishlist: ["starwars","vintage"],             walletBalance: 310.00,  paymentMethods: [{ id:"pm9", type:"card", last4:"6677", brand:"Visa",       expiry:"02/26", isDefault:true  }] },
-];
-
-const SEED_CARDS = [
-  { id:"c1",  ownerId:"u2",  name:"Snake Eyes (1982 O-Ring)",  brand:"Hasbro",    line:"G.I. Joe",           isNew:false, value:220,  image:"🥷", tags:["vintage","hasbro","military"],     wantsTrade:true,  wantsBuy:false, listedAt:"2024-11-01" },
-  { id:"c2",  ownerId:"u3",  name:"Optimus Prime G1 Boxed",    brand:"Hasbro",    line:"Transformers",        isNew:true,  value:580,  image:"🤖", tags:["vintage","transformers","boxed"],   wantsTrade:true,  wantsBuy:true,  listedAt:"2024-10-28", videoUrl:"https://www.youtube.com/watch?v=jNQXAC9IVRw" },
-  { id:"c3",  ownerId:"u4",  name:"He-Man MOTU (1982)",        brand:"Mattel",    line:"Masters of Universe", isNew:false, value:95,   image:"⚔️", tags:["vintage","fantasy","motu"],         wantsTrade:true,  wantsBuy:true,  listedAt:"2024-11-05" },
-  { id:"c4",  ownerId:"u5",  name:"Darth Vader (12-back)",     brand:"Kenner",    line:"Star Wars (Vintage)", isNew:true,  value:1200, image:"🌑", tags:["starwars","vintage","kenner"],      wantsTrade:true,  wantsBuy:false, listedAt:"2024-10-15" },
-  { id:"c5",  ownerId:"u6",  name:"Leonardo '88",              brand:"Playmates", line:"TMNT",                isNew:false, value:310,  image:"🐢", tags:["tmnt","vintage","playmates"],       wantsTrade:true,  wantsBuy:true,  listedAt:"2024-11-08" },
-  { id:"c6",  ownerId:"u7",  name:"Skeletor Battle Armor",     brand:"Mattel",    line:"Masters of Universe", isNew:false, value:140,  image:"💀", tags:["vintage","motu","villain"],         wantsTrade:false, wantsBuy:true,  listedAt:"2024-11-10" },
-  { id:"c7",  ownerId:"u8",  name:"Megatron G1 Complete",      brand:"Hasbro",    line:"Transformers",        isNew:false, value:420,  image:"🔫", tags:["vintage","transformers","villain"], wantsTrade:true,  wantsBuy:false, listedAt:"2024-10-20" },
-  { id:"c8",  ownerId:"u9",  name:"Storm Shadow (1984)",       brand:"Hasbro",    line:"G.I. Joe",            isNew:false, value:180,  image:"🤍", tags:["vintage","hasbro","ninja"],         wantsTrade:true,  wantsBuy:true,  listedAt:"2024-11-12" },
-  { id:"c9",  ownerId:"u10", name:"Luke Skywalker Bespin",     brand:"Kenner",    line:"Star Wars (Vintage)", isNew:false, value:85,   image:"⚡", tags:["starwars","vintage","kenner"],      wantsTrade:true,  wantsBuy:true,  listedAt:"2024-11-03" },
-  { id:"c10", ownerId:"u6",  name:"Raphael Red Variant",       brand:"Playmates", line:"TMNT",                isNew:false, value:260,  image:"🍕", tags:["tmnt","rare","playmates"],          wantsTrade:true,  wantsBuy:true,  listedAt:"2024-11-06" },
-  { id:"m1",  ownerId:"u1",  name:"Cobra Commander (Hood)",    brand:"Hasbro",    line:"G.I. Joe",            isNew:false, value:165,  image:"🐍", tags:["vintage","hasbro","villain"],       wantsTrade:true,  wantsBuy:false, listedAt:"2024-11-09" },
-  { id:"m2",  ownerId:"u1",  name:"Soundwave G1 Complete",     brand:"Hasbro",    line:"Transformers",        isNew:true,  value:490,  image:"📻", tags:["vintage","transformers"],           wantsTrade:true,  wantsBuy:false, listedAt:"2024-11-07" },
-  { id:"m3",  ownerId:"u1",  name:"Boba Fett (Vintage)",       brand:"Kenner",    line:"Star Wars (Vintage)", isNew:false, value:340,  image:"🎯", tags:["starwars","vintage","kenner"],      wantsTrade:false, wantsBuy:false, listedAt:"2024-10-30" },
-  { id:"m4",  ownerId:"u1",  name:"Michelangelo '88",          brand:"Playmates", line:"TMNT",                isNew:false, value:285,  image:"🟠", tags:["tmnt","vintage","playmates"],       wantsTrade:true,  wantsBuy:false, listedAt:"2024-11-11" },
-];
-
-const SEED_TRANSACTIONS = [
-  { id:"t1", type:"purchase", buyerId:"u1", sellerId:"u3", cardId:"c2", amount:580,  fee:29.00, net:551.00, status:"completed", method:"wallet",  date:"2024-10-29", cardName:"Optimus Prime G1 Boxed" },
-  { id:"t2", type:"sale",     buyerId:"u4", sellerId:"u1", cardId:"m3", amount:340,  fee:17.00, net:323.00, status:"completed", method:"card",    date:"2024-11-01", cardName:"Boba Fett (Vintage)"    },
-  { id:"t3", type:"purchase", buyerId:"u1", sellerId:"u6", cardId:"c5", amount:310,  fee:10.85, net:299.15, status:"in_escrow",  method:"card",    date:"2024-11-08", cardName:"Leonardo '88"           },
-];
+// Mock seed data removed for production launch. Real data comes from Supabase.
+const SEED_USERS = [];
+const SEED_CARDS = [];
+const SEED_TRANSACTIONS = [];
 
 // USPS Ground shipping rates by value (flat rate boxes)
 const USPS_RATES = [
@@ -305,59 +269,10 @@ const INSURANCE_THRESHOLD = 100; // USPS includes $100 free — charge for above
 const getShippingRate = (value) => USPS_RATES.find(r => value <= r.maxValue);
 const getInsuranceCost = (value) => value > INSURANCE_THRESHOLD ? (USPS_RATES.find(r=>value<=r.maxValue)?.insurance||2.75) : 0;
 
-// Seed shipments — simulate different tracking states
-const SEED_SHIPMENTS = [
-  { id:"sh1", txnId:"t3", trackingNumber:"9400111899223397607175", carrier:"USPS Ground", status:"in_transit", estimatedDelivery:"2024-11-14", shippingCost:14.65, fromUser:"u6", toUser:"u1", figureName:"Leonardo '88", figureValue:310, events:[
-    { date:"2024-11-08 14:22", location:"Brooklyn, NY", description:"Shipping label created" },
-    { date:"2024-11-09 09:45", location:"Brooklyn, NY", description:"Accepted at USPS facility" },
-    { date:"2024-11-10 03:12", location:"Philadelphia, PA", description:"In transit to next facility" },
-    { date:"2024-11-11 08:30", location:"Newark, NJ", description:"Arrived at USPS facility" },
-  ]},
-  { id:"sh2", txnId:"t1", trackingNumber:"9400111899223397512344", carrier:"USPS Ground", status:"delivered", deliveredAt:"2024-11-01T16:55:00.000Z", estimatedDelivery:"2024-11-01", shippingCost:19.95, fromUser:"u3", toUser:"u1", figureName:"Optimus Prime G1 Boxed", figureValue:580, fundsReleased:true, autoReleased:true, events:[
-    { date:"2024-10-29 10:00", location:"Austin, TX", description:"Shipping label created" },
-    { date:"2024-10-30 11:20", location:"Austin, TX", description:"Accepted at USPS facility" },
-    { date:"2024-10-31 06:45", location:"Dallas, TX", description:"In transit" },
-    { date:"2024-11-01 14:33", location:"New York, NY", description:"Out for delivery" },
-    { date:"2024-11-01 16:55", location:"New York, NY", description:"Delivered — Front Door" },
-  ]},
-];
-
-const SEED_DISPUTES = [
-  // Example resolved dispute for reference
-  { id:"d1", txnId:"t1", raisedBy:"u1", againstUserId:"u3", shipmentId:"sh2", reason:"not_as_described", detail:"Figure had heavy yellowing not shown in listing photos.", status:"resolved", resolution:"refund_partial", adminNote:"Partial refund of $80 issued. Seller agreed.", raisedAt:"2024-11-02", resolvedAt:"2024-11-04", figureValue:580, figureName:"Optimus Prime G1 Boxed", disputeType:"purchase", againstUsername:"BotCollector88" },
-];
-
-const SEED_RATINGS = [
-  { id:"r1", txnId:"t1", fromUserId:"u1", toUserId:"u3", score:4, comment:"Fast shipper, figure was well packed. Minor yellowing not disclosed.", type:"buyer_to_seller", date:"2024-11-05" },
-  { id:"r2", txnId:"t2", fromUserId:"u4", toUserId:"u1", score:5, comment:"Great seller! Figure exactly as described, shipped next day.", type:"buyer_to_seller", date:"2024-11-03" },
-];
-
-// Each thread is between two users, linked to a card/trade
-const SEED_MESSAGES = [
-  { id:"th1", participants:["u1","u3"], cardId:"c2", cardName:"Optimus Prime G1 Boxed", cardImage:"🤖",
-    messages:[
-      { id:"m1", from:"u3", text:"Hey! Still interested in the Optimus? Happy to answer any questions.", ts:"2024-10-27 09:12" },
-      { id:"m2", from:"u1", text:"Yes! Does it have the original trailer and all accessories?", ts:"2024-10-27 09:45" },
-      { id:"m3", from:"u3", text:"Complete with trailer, missiles and instructions. Box has some shelf wear but figure is pristine.", ts:"2024-10-27 10:02" },
-      { id:"m4", from:"u1", text:"Perfect. Going to buy it now 🙌", ts:"2024-10-27 10:15" },
-      { id:"m5", from:"u3", text:"Great! Will ship same day. Thanks!", ts:"2024-10-27 10:18" },
-    ]
-  },
-  { id:"th2", participants:["u1","u9"], cardId:"c8", cardName:"Storm Shadow (1984)", cardImage:"🤍",
-    messages:[
-      { id:"m6", from:"u9", text:"I saw you have Cobra Commander — interested in trading for my Storm Shadow?", ts:"2024-11-10 14:30" },
-      { id:"m7", from:"u1", text:"Definitely interested! Any yellowing on Storm Shadow?", ts:"2024-11-10 15:00" },
-      { id:"m8", from:"u9", text:"None at all — kept in a UV-protected case since 1987 🤍", ts:"2024-11-10 15:22" },
-    ]
-  },
-  { id:"th3", participants:["u1","u6"], cardId:"c5", cardName:"Leonardo '88", cardImage:"🐢",
-    messages:[
-      { id:"m9",  from:"u1", text:"Hi! Just bought Leonardo. When can you ship?", ts:"2024-11-08 18:00" },
-      { id:"m10", from:"u6", text:"Hey! Will drop it at USPS tomorrow morning 📦", ts:"2024-11-08 18:45" },
-      { id:"m11", from:"u1", text:"Awesome thanks for the quick response!", ts:"2024-11-08 18:47" },
-    ]
-  },
-];
+const SEED_SHIPMENTS = [];
+const SEED_DISPUTES = [];
+const SEED_RATINGS = [];
+const SEED_MESSAGES = [];
 
 const NOTIF_TYPES = {
   trade_proposed:   { icon:"🤝", color:"#00b894", label:"Trade Proposed"    },
@@ -370,16 +285,7 @@ const NOTIF_TYPES = {
   wishlist_match:   { icon:"🔥", color:"#4A90D9", label:"Wishlist Match!"    },
 };
 
-const SEED_NOTIFICATIONS = [
-  { id:"n1", type:"wishlist_match",  read:false, ts:"2024-11-12 09:00", title:"Wishlist match!", body:"Storm Shadow (1984) just listed — matches your G.I. Joe wishlist tag", cardId:"c8",  link:"browse"    },
-  { id:"n2", type:"trade_proposed",  read:false, ts:"2024-11-11 18:30", title:"Trade proposed",  body:"NinjaArsenal wants to trade Storm Shadow for your Cobra Commander",   userId:"u9", link:"trades"    },
-  { id:"n3", type:"message",         read:false, ts:"2024-11-10 15:22", title:"New message",     body:"NinjaArsenal: None at all — kept in a UV-protected case since 1987 🤍", userId:"u9", link:"messages"  },
-  { id:"n4", type:"delivered",       read:true,  ts:"2024-11-08 16:55", title:"Package delivered!",body:"Leonardo '88 has been delivered. Funds auto-release in 7 days.",   cardId:"c5", link:"shipping"  },
-  { id:"n5", type:"shipped",         read:true,  ts:"2024-11-08 10:30", title:"Your item shipped", body:"ShellShocked_NY shipped Leonardo '88 via USPS Ground.",              cardId:"c5", link:"shipping"  },
-  { id:"n6", type:"funds_released",  read:true,  ts:"2024-11-03 14:00", title:"You've been paid!", body:"$323.00 from the Boba Fett sale has been released to your wallet.",  link:"wallet"    },
-  { id:"n7", type:"rated",           read:true,  ts:"2024-11-03 12:00", title:"New rating",       body:"DarkSideDave left you a 5-star rating ⭐⭐⭐⭐⭐",                    userId:"u4", link:"account"   },
-  { id:"n8", type:"wishlist_match",  read:true,  ts:"2024-11-01 08:15", title:"Wishlist match!", body:"Optimus Prime G1 Boxed just listed — matches your vintage wishlist tag", cardId:"c2", link:"browse"   },
-];
+const SEED_NOTIFICATIONS = [];
 
 const TRACKING_STEPS = ["Label Created","Accepted","In Transit","Out for Delivery","Delivered"];
 const trackingStepIndex = (status) => status==="delivered"?4:status==="out_for_delivery"?3:status==="in_transit"?2:status==="accepted"?1:0;
