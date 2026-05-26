@@ -45,7 +45,7 @@ delete from public.conversations
      or id not in (select distinct conversation_id from public.conversation_participants);
 
 delete from public.notifications
-  where user_id in (select id from demo_users)
+  where recipient_id in (select id from demo_users)
      or related_user_id in (select id from demo_users)
      or card_id in (select id from demo_listings);
 
