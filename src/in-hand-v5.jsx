@@ -3237,6 +3237,14 @@ function AppShell({ onSignOut, authUser }) {
   }, [db]);
   const [dbLoaded, setDbLoaded] = useState(false);
   const [tab, setTab] = useState("browse");
+  useEffect(() => {
+    const onNavigate = (e) => {
+      const next = e?.detail?.tab;
+      if (next && NAV_ITEMS.some(([id]) => id === next)) setTab(next);
+    };
+    window.addEventListener("inhand:navigate", onNavigate);
+    return () => window.removeEventListener("inhand:navigate", onNavigate);
+  }, []);
   const [viewMode, setViewMode] = useState("list");
   const [search, setSearch] = useState("");
   const [lineFilter, setLineFilter] = useState("All");

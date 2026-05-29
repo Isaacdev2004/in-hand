@@ -1,0 +1,39 @@
+# Codemagic — build In Hand iOS on cloud Mac (no local Mac required).
+# https://codemagic.io — connect repo, add App Store Connect API key + signing.
+workflows:
+  ios-release:
+    name: In Hand iOS
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.inhand.collector
+      vars:
+        XCODE_PROJECT: "ios/App/App.xcodeproj"
+        XCODE_SCHEME: "App"
+        APP_ID: com.inhand.collector
+      node: 20
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Install dependencies
+        script: |
+          npm ci
+          npm run build
+          npx cap sync ios
+      - name: Set up code signing
+        script: xcode-project use-profiles
+      - name: Build ipa
+        script: |
+          xcode-project build-ipa \
+            --project "$CM_BUILD_DIR/ios/App/App.xcodeproj" \
+            --scheme "$XCODE_SCHEME"
+    artifacts:
+      - build/ios/ipa/*.ipa
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        beta_groups:
+          - Internal Testers

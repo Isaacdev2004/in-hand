@@ -3,6 +3,13 @@
   "version": "1.2.0",
   "private": true,
   "dependencies": {
+    "@capacitor/app": "^8.1.0",
+    "@capacitor/cli": "^8.3.4",
+    "@capacitor/core": "^8.3.4",
+    "@capacitor/ios": "^8.3.4",
+    "@capacitor/keyboard": "^8.0.3",
+    "@capacitor/splash-screen": "^8.0.1",
+    "@capacitor/status-bar": "^8.0.2",
     "@stripe/stripe-js": "^9.3.1",
     "@supabase/supabase-js": "^2.49.1",
     "react": "^18.2.0",
@@ -11,7 +18,11 @@
   },
   "scripts": {
     "start": "react-scripts start",
-    "build": "react-scripts build"
+    "build": "react-scripts build",
+    "build:mobile": "npm run build && npx cap sync",
+    "cap:sync": "npx cap sync",
+    "cap:open:ios": "npx cap open ios",
+    "cap:copy": "npx cap copy"
   },
   "browserslist": {
     "production": [

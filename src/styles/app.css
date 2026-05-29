@@ -1,4 +1,8 @@
 :root {
+  --ih-safe-top: env(safe-area-inset-top, 0px);
+  --ih-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --ih-safe-left: env(safe-area-inset-left, 0px);
+  --ih-safe-right: env(safe-area-inset-right, 0px);
   --ih-bg: #f4f6f8;
   --ih-surface: #ffffff;
   --ih-surface-muted: #eef2f6;
@@ -166,6 +170,16 @@ body {
   .inhand-page {
     padding-bottom: 32px;
   }
+}
+
+/* Native iOS shell (Capacitor) — extra bottom room above home indicator */
+html.capacitor-native .inhand-main,
+html.capacitor-native .inhand-page {
+  padding-bottom: calc(88px + var(--ih-safe-bottom));
+}
+
+html.capacitor-native.keyboard-open .inhand-bottom-nav {
+  display: none;
 }
 
 @media (max-width: 959px) {

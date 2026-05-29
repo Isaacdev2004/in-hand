@@ -55,3 +55,17 @@ Card checkout calls **`/functions/v1/create-checkout-session`**, which loads the
 1. Deploy functions: see `supabase/functions/README.md`.
 2. Set Edge Function secrets: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`.
 3. In Stripe Dashboard, add webhook URL: `https://<project-ref>.supabase.co/functions/v1/stripe-webhook` and subscribe to `checkout.session.completed`.
+
+## iOS App (Capacitor)
+
+Native shell for App Store / TestFlight. Bundle ID: **`com.inhand.collector`**.
+
+```bash
+npm run build:mobile    # build web + sync to ios/
+npx cap open ios        # requires macOS + Xcode
+```
+
+- Full checklist: **`docs/APP_STORE.md`**
+- Privacy policy (host on Vercel): **`public/privacy.html`** → `/privacy.html`
+- Cloud Mac build (no local Mac): **`codemagic.yaml`**
+- App icons: add `resources/icon.png` (1024×1024) then `npx @capacitor/assets generate --ios`
