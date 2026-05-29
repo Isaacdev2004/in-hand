@@ -1,8 +1,9 @@
-# Codemagic — build In Hand iOS on cloud Mac (no local Mac required).
-# https://codemagic.io — connect repo, add App Store Connect API key + signing.
+# Codemagic — In Hand iOS (no Mac required)
+# Setup guide: docs/CODEMAGIC_SETUP.md
 workflows:
-  ios-release:
-    name: In Hand iOS
+  # Step 1: run this first to verify signing + build
+  ios-build:
+    name: In Hand iOS (build only)
     max_build_duration: 60
     instance_type: mac_mini_m2
     environment:
@@ -10,21 +11,53 @@ workflows:
         distribution_type: app_store
         bundle_identifier: com.inhand.collector
       vars:
-        XCODE_PROJECT: "ios/App/App.xcodeproj"
-        XCODE_SCHEME: "App"
-        APP_ID: com.inhand.collector
+        XCODE_PROJECT: ios/App/App.xcodeproj
+        XCODE_SCHEME: App
+        NODE_OPTIONS: --max_old_space_size=4096
       node: 20
       xcode: latest
-      cocoapods: default
     scripts:
-      - name: Install dependencies
+      - name: Install and build web app
         script: |
           npm ci
           npm run build
           npx cap sync ios
       - name: Set up code signing
         script: xcode-project use-profiles
-      - name: Build ipa
+      - name: Build IPA
+        script: |
+          xcode-project build-ipa \
+            --project "$CM_BUILD_DIR/ios/App/App.xcodeproj" \
+            --scheme "$XCODE_SCHEME"
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+
+  # Step 2: after ios-build succeeds — uploads to TestFlight
+  ios-release:
+    name: In Hand iOS (TestFlight)
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.inhand.collector
+      vars:
+        XCODE_PROJECT: ios/App/App.xcodeproj
+        XCODE_SCHEME: App
+        APP_ID: com.inhand.collector
+        NODE_OPTIONS: --max_old_space_size=4096
+      node: 20
+      xcode: latest
+    scripts:
+      - name: Install and build web app
+        script: |
+          npm ci
+          npm run build
+          npx cap sync ios
+      - name: Set up code signing
+        script: xcode-project use-profiles
+      - name: Build IPA
         script: |
           xcode-project build-ipa \
             --project "$CM_BUILD_DIR/ios/App/App.xcodeproj" \

@@ -67,5 +67,5 @@ npx cap open ios        # requires macOS + Xcode
 
 - Full checklist: **`docs/APP_STORE.md`**
 - Privacy policy (host on Vercel): **`public/privacy.html`** → `/privacy.html`
-- Cloud Mac build (no local Mac): **`codemagic.yaml`**
+- Cloud Mac build from your HP laptop: **`docs/CODEMAGIC_SETUP.md`** + **`codemagic.yaml`**
 - App icons: add `resources/icon.png` (1024×1024) then `npx @capacitor/assets generate --ios`

@@ -78,7 +78,7 @@ In Xcode:
 2. Product → Archive → Distribute → App Store Connect → Upload.  
 3. TestFlight → add internal testers → smoke test full flow.
 
-**Windows:** use Codemagic (`codemagic.yaml` in repo) or borrow a Mac for Archive.
+**Windows / HP laptop:** use Codemagic — full steps in **`docs/CODEMAGIC_SETUP.md`** (`codemagic.yaml` in repo).
 
 ## Smoke test before TestFlight
 
