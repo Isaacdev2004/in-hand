@@ -87,6 +87,30 @@ Codemagic stores the certificate and provisioning profile for you.
 
 ### 5. Environment variables (same as Vercel)
 
+Codemagic requires a **group name** for every variable.
+
+1. App **in-hand** → **Environment variables** tab
+2. In the **Group** field, type: `inhand_env` → click **Create group** (or select it if it exists)
+3. Add each variable (mark **Secret** for keys):
+
+| Name | Secure |
+|------|--------|
+| `REACT_APP_SUPABASE_URL` | ✓ |
+| `REACT_APP_SUPABASE_ANON_KEY` | ✓ |
+| `REACT_APP_STRIPE_PUBLISHABLE_KEY` | ✓ |
+
+4. Save each variable into group **`inhand_env`**
+
+The yaml already imports this group:
+
+```yaml
+environment:
+  groups:
+    - inhand_env
+```
+
+Without the group name in the UI **and** `groups: - inhand_env` in yaml, variables are not available during build.
+
 In the app → **Environment variables** → **Add**:
 
 | Variable | Where to copy from |

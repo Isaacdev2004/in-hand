@@ -9,6 +9,8 @@ workflows:
     integrations:
       app_store_connect: "In hand"
     environment:
+      groups:
+        - inhand_env
       vars:
         BUNDLE_ID: com.inhand.collector
         XCODE_PROJECT: ios/App/App.xcodeproj
@@ -44,6 +46,8 @@ workflows:
     integrations:
       app_store_connect: "In hand"
     environment:
+      groups:
+        - inhand_env
       vars:
         BUNDLE_ID: com.inhand.collector
         XCODE_PROJECT: ios/App/App.xcodeproj
