@@ -58,6 +58,19 @@ Send you (the developer) via a **secure channel** (not WhatsApp plain text if po
    - API key (.p8 contents)
 3. Save — Codemagic validates the key
 
+**Important:** Note the **API key name** you chose when uploading (e.g. `Codemagic`). It must match `integrations.app_store_connect` in `codemagic.yaml`. If you used a different name, either rename in Team settings or edit the yaml to match.
+
+### 3b. Fix “auth integration requires workflow integrations” error
+
+If [app settings](https://codemagic.io) shows a yaml validation error on `ios-release → publishing`, the workflow needs:
+
+```yaml
+integrations:
+  app_store_connect: Codemagic   # your key name here
+```
+
+This is already in the repo on `main` — pull latest or confirm the name matches yours.
+
 ### 4. iOS code signing (automatic)
 
 1. Open the **in-hand** app in Codemagic
