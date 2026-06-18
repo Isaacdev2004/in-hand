@@ -71,19 +71,38 @@ integrations:
 
 This is already in the repo on `main` — pull latest or confirm the name matches yours.
 
-### 4. iOS code signing (automatic)
+### 4. iOS code signing (required — fixes “no provisioning profile” / exit 65)
 
-1. Open the **in-hand** app in Codemagic
-2. **Settings** (gear) → **codemagic.yaml** is selected as config source
-3. Go to **Distribution** → **iOS code signing**
-4. Choose **Automatic**
-5. Select Danny’s **Apple Developer Team**
-6. Bundle ID: `com.inhand.collector`
-7. Distribution type: **App Store**
-8. Click **Fetch certificate** / **Generate** if prompted
-9. Save
+Do this **once** in Codemagic **before** starting a build. The yaml uses `ios_signing` + uploaded cert/profile (not CLI `--create`).
 
-Codemagic stores the certificate and provisioning profile for you.
+#### A. Generate distribution certificate
+
+1. Codemagic → your **avatar** → **Team settings** (or **Personal account**)
+2. **codemagic.yaml settings** → **Code signing identities**
+3. Tab **iOS certificates** → **Generate certificate**
+4. Reference name: `inhand_distribution`
+5. Certificate type: **Apple Distribution**
+6. App Store Connect API key: **In hand**
+7. **Create certificate** → wait for green checkmark
+
+> If Apple says “already have a Distribution certificate” (max 3), either revoke an old one in [Apple Certificates](https://developer.apple.com/account/resources/certificates/list) or use **Fetch certificate** for one Codemagic created before.
+
+#### B. Fetch App Store provisioning profile
+
+1. Same page → tab **iOS provisioning profiles** → **Fetch profiles**
+2. Under **App Store profiles**, find **`com.inhand.collector`**
+3. Reference name: `inhand_appstore`
+4. **Download selected**
+
+You should see a **green checkmark** in the Certificate column for that profile.
+
+#### C. Confirm bundle ID exists (Danny)
+
+[developer.apple.com/account/resources/identifiers](https://developer.apple.com/account/resources/identifiers/list) → `com.inhand.collector` must be registered.
+
+#### D. Re-run build
+
+Workflow **In Hand iOS (build only)** on `main`. The signing step only runs `xcode-project use-profiles` + `build-ipa` (cert/profile come from step A + B).
 
 ### 5. Environment variables (same as Vercel)
 
