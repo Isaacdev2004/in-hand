@@ -16,7 +16,7 @@ workflows:
         XCODE_PROJECT: ios/App/App.xcodeproj
         XCODE_SCHEME: App
         NODE_OPTIONS: --max_old_space_size=4096
-      node: 20
+      node: 22
       xcode: latest
     scripts:
       - name: Install and build web app
@@ -54,7 +54,7 @@ workflows:
         XCODE_SCHEME: App
         APP_ID: com.inhand.collector
         NODE_OPTIONS: --max_old_space_size=4096
-      node: 20
+      node: 22
       xcode: latest
     scripts:
       - name: Install and build web app
