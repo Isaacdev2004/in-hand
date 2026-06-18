@@ -9,10 +9,8 @@ workflows:
     integrations:
       app_store_connect: "In hand"
     environment:
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.inhand.collector
       vars:
+        BUNDLE_ID: com.inhand.collector
         XCODE_PROJECT: ios/App/App.xcodeproj
         XCODE_SCHEME: App
         NODE_OPTIONS: --max_old_space_size=4096
@@ -24,10 +22,13 @@ workflows:
           npm ci
           npm run build
           npx cap sync ios
-      - name: Set up code signing
-        script: xcode-project use-profiles
-      - name: Build IPA
+      - name: Fetch signing files and build IPA
         script: |
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --create
+          keychain add-certificates
+          xcode-project use-profiles
           xcode-project build-ipa \
             --project "$CM_BUILD_DIR/ios/App/App.xcodeproj" \
             --scheme "$XCODE_SCHEME"
@@ -40,14 +41,11 @@ workflows:
     name: In Hand iOS (TestFlight)
     max_build_duration: 60
     instance_type: mac_mini_m2
-    # Must match the API key name in Codemagic → Team settings → Integrations → Developer Portal
     integrations:
       app_store_connect: "In hand"
     environment:
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.inhand.collector
       vars:
+        BUNDLE_ID: com.inhand.collector
         XCODE_PROJECT: ios/App/App.xcodeproj
         XCODE_SCHEME: App
         APP_ID: com.inhand.collector
@@ -60,10 +58,13 @@ workflows:
           npm ci
           npm run build
           npx cap sync ios
-      - name: Set up code signing
-        script: xcode-project use-profiles
-      - name: Build IPA
+      - name: Fetch signing files and build IPA
         script: |
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --create
+          keychain add-certificates
+          xcode-project use-profiles
           xcode-project build-ipa \
             --project "$CM_BUILD_DIR/ios/App/App.xcodeproj" \
             --scheme "$XCODE_SCHEME"
