@@ -7,7 +7,7 @@ workflows:
     max_build_duration: 60
     instance_type: mac_mini_m2
     integrations:
-      app_store_connect: Codemagic
+      app_store_connect: "In hand"
     environment:
       ios_signing:
         distribution_type: app_store
@@ -42,7 +42,7 @@ workflows:
     instance_type: mac_mini_m2
     # Must match the API key name in Codemagic → Team settings → Integrations → Developer Portal
     integrations:
-      app_store_connect: Codemagic
+      app_store_connect: "In hand"
     environment:
       ios_signing:
         distribution_type: app_store
