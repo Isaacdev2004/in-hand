@@ -1,6 +1,6 @@
 # Codemagic — In Hand iOS (no Mac required)
-# Setup guide: docs/CODEMAGIC_SETUP.md
-# Signing: docs/CODEMAGIC_SETUP.md → "Generate certificate in Codemagic UI" (required once)
+# Setup: docs/CODEMAGIC_SETUP.md
+# Required in group inhand_env: CERTIFICATE_PRIVATE_KEY (generate once — see docs)
 workflows:
   ios-build:
     name: In Hand iOS (build only)
@@ -11,9 +11,6 @@ workflows:
     environment:
       groups:
         - inhand_env
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.inhand.collector
       vars:
         BUNDLE_ID: com.inhand.collector
         XCODE_PROJECT: ios/App/App.xcodeproj
@@ -29,6 +26,15 @@ workflows:
           npx cap sync ios
       - name: Set up code signing and build IPA
         script: |
+          if [ -z "$CERTIFICATE_PRIVATE_KEY" ]; then
+            echo "ERROR: Add CERTIFICATE_PRIVATE_KEY to Codemagic group inhand_env (see docs/CODEMAGIC_SETUP.md)"
+            exit 1
+          fi
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --create \
+            --certificate-key @env:CERTIFICATE_PRIVATE_KEY
+          keychain add-certificates
           xcode-project use-profiles
           xcode-project build-ipa \
             --project "$CM_BUILD_DIR/ios/App/App.xcodeproj" \
@@ -46,9 +52,6 @@ workflows:
     environment:
       groups:
         - inhand_env
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.inhand.collector
       vars:
         BUNDLE_ID: com.inhand.collector
         XCODE_PROJECT: ios/App/App.xcodeproj
@@ -65,6 +68,15 @@ workflows:
           npx cap sync ios
       - name: Set up code signing and build IPA
         script: |
+          if [ -z "$CERTIFICATE_PRIVATE_KEY" ]; then
+            echo "ERROR: Add CERTIFICATE_PRIVATE_KEY to Codemagic group inhand_env (see docs/CODEMAGIC_SETUP.md)"
+            exit 1
+          fi
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --create \
+            --certificate-key @env:CERTIFICATE_PRIVATE_KEY
+          keychain add-certificates
           xcode-project use-profiles
           xcode-project build-ipa \
             --project "$CM_BUILD_DIR/ios/App/App.xcodeproj" \

@@ -71,38 +71,42 @@ integrations:
 
 This is already in the repo on `main` — pull latest or confirm the name matches yours.
 
-### 4. iOS code signing (required — fixes “no provisioning profile” / exit 65)
+### 4. iOS signing — one-time private key (fixes “No matching profiles” at build start)
 
-Do this **once** in Codemagic **before** starting a build. The yaml uses `ios_signing` + uploaded cert/profile (not CLI `--create`).
+The error **before the build runs** means Codemagic had no App Store profile stored. We now create the cert + profile **during the build** using a private key you add once.
 
-#### A. Generate distribution certificate
+#### Step A — Generate a private key on your HP (one time)
 
-1. Codemagic → your **avatar** → **Team settings** (or **Personal account**)
-2. **codemagic.yaml settings** → **Code signing identities**
-3. Tab **iOS certificates** → **Generate certificate**
-4. Reference name: `inhand_distribution`
-5. Certificate type: **Apple Distribution**
-6. App Store Connect API key: **In hand**
-7. **Create certificate** → wait for green checkmark
+**Option 1 — PowerShell (if OpenSSL is installed):**
+```powershell
+openssl genrsa 2048
+```
+Copy **all** output including:
+```
+-----BEGIN RSA PRIVATE KEY-----
+...
+-----END RSA PRIVATE KEY-----
+```
 
-> If Apple says “already have a Distribution certificate” (max 3), either revoke an old one in [Apple Certificates](https://developer.apple.com/account/resources/certificates/list) or use **Fetch certificate** for one Codemagic created before.
+**Option 2 — No OpenSSL:** In Codemagic → **Team settings** → **Code signing identities** → **iOS certificates** → **Generate certificate** → type **Apple Distribution** → API key **In hand**. Codemagic creates the cert; you still need `CERTIFICATE_PRIVATE_KEY` — use Option 1 or ask Danny to run `openssl genrsa 2048` on any Mac/Linux and send the output securely.
 
-#### B. Fetch App Store provisioning profile
+#### Step B — Add to Codemagic
 
-1. Same page → tab **iOS provisioning profiles** → **Fetch profiles**
-2. Under **App Store profiles**, find **`com.inhand.collector`**
-3. Reference name: `inhand_appstore`
-4. **Download selected**
+1. App **in-hand** → **Environment variables**
+2. Group: **`inhand_env`**
+3. Name: **`CERTIFICATE_PRIVATE_KEY`**
+4. Value: paste the full private key (BEGIN/END lines included)
+5. **Secret:** ON → Save
 
-You should see a **green checkmark** in the Certificate column for that profile.
+Keep this key — **reuse the same key** on every build (do not regenerate each time).
 
-#### C. Confirm bundle ID exists (Danny)
+#### Step C — Danny: bundle ID must exist
 
-[developer.apple.com/account/resources/identifiers](https://developer.apple.com/account/resources/identifiers/list) → `com.inhand.collector` must be registered.
+[developer.apple.com/account/resources/identifiers](https://developer.apple.com/account/resources/identifiers/list) → **`com.inhand.collector`** registered.
 
-#### D. Re-run build
+#### Step D — Start build
 
-Workflow **In Hand iOS (build only)** on `main`. The signing step only runs `xcode-project use-profiles` + `build-ipa` (cert/profile come from step A + B).
+Workflow **In Hand iOS (build only)** on **`main`**. Build should **start** (no more instant “no matching profiles” error).
 
 ### 5. Environment variables (same as Vercel)
 
@@ -117,6 +121,7 @@ Codemagic requires a **group name** for every variable.
 | `REACT_APP_SUPABASE_URL` | ✓ |
 | `REACT_APP_SUPABASE_ANON_KEY` | ✓ |
 | `REACT_APP_STRIPE_PUBLISHABLE_KEY` | ✓ |
+| `CERTIFICATE_PRIVATE_KEY` | ✓ (iOS signing — see section 4) |
 
 4. Save each variable into group **`inhand_env`**
 
