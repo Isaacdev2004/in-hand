@@ -13,6 +13,7 @@ workflows:
         - inhand_env
       vars:
         BUNDLE_ID: com.inhand.collector
+        APPLE_TEAM_ID: 88L7JJ3Z28
         XCODE_PROJECT: ios/App/App.xcodeproj
         XCODE_SCHEME: App
         NODE_OPTIONS: --max_old_space_size=4096
@@ -37,11 +38,16 @@ workflows:
             echo "Copy the full output (BEGIN RSA PRIVATE KEY ... END RSA PRIVATE KEY) into Codemagic."
             exit 1
           }
+          keychain initialize
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
             --type IOS_APP_STORE \
             --create \
             --certificate-key @env:CERTIFICATE_PRIVATE_KEY
           keychain add-certificates
+          KEYCHAIN_PATH=$(keychain get-default)
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" "$KEYCHAIN_PATH"
+          security unlock-keychain -p "" "$KEYCHAIN_PATH" 2>/dev/null || true
+          security find-identity -v -p codesigning
           xcode-project use-profiles
           xcode-project build-ipa \
             --project "$CM_BUILD_DIR/ios/App/App.xcodeproj" \
@@ -61,6 +67,7 @@ workflows:
         - inhand_env
       vars:
         BUNDLE_ID: com.inhand.collector
+        APPLE_TEAM_ID: 88L7JJ3Z28
         XCODE_PROJECT: ios/App/App.xcodeproj
         XCODE_SCHEME: App
         APP_ID: com.inhand.collector
@@ -86,11 +93,16 @@ workflows:
             echo "Copy the full output (BEGIN RSA PRIVATE KEY ... END RSA PRIVATE KEY) into Codemagic."
             exit 1
           }
+          keychain initialize
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
             --type IOS_APP_STORE \
             --create \
             --certificate-key @env:CERTIFICATE_PRIVATE_KEY
           keychain add-certificates
+          KEYCHAIN_PATH=$(keychain get-default)
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" "$KEYCHAIN_PATH"
+          security unlock-keychain -p "" "$KEYCHAIN_PATH" 2>/dev/null || true
+          security find-identity -v -p codesigning
           xcode-project use-profiles
           xcode-project build-ipa \
             --project "$CM_BUILD_DIR/ios/App/App.xcodeproj" \
