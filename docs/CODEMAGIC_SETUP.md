@@ -75,12 +75,22 @@ This is already in the repo on `main` — pull latest or confirm the name matche
 
 The error **before the build runs** means Codemagic had no App Store profile stored. We now create the cert + profile **during the build** using a private key you add once.
 
-#### Step A — Generate a private key on your HP (one time)
+#### Step A — Generate RSA 2048 private key (one time)
 
-**Option 1 — PowerShell (if OpenSSL is installed):**
+Apple **only accepts RSA 2048**. EC keys or other sizes will fail with:
+`CSR algorithm/size incorrect. Expected: RSA(2048)`
+
+**On your HP (PowerShell or Git Bash):**
 ```powershell
 openssl genrsa 2048
 ```
+
+Or save to a file:
+```powershell
+openssl genrsa -out ios_rsa2048.pem 2048
+type ios_rsa2048.pem
+```
+
 Copy **all** output including:
 ```
 -----BEGIN RSA PRIVATE KEY-----
@@ -88,9 +98,9 @@ Copy **all** output including:
 -----END RSA PRIVATE KEY-----
 ```
 
-**Option 2 — No OpenSSL:** In Codemagic → **Team settings** → **Code signing identities** → **iOS certificates** → **Generate certificate** → type **Apple Distribution** → API key **In hand**. Codemagic creates the cert; you still need `CERTIFICATE_PRIVATE_KEY` — use Option 1 or ask Danny to run `openssl genrsa 2048` on any Mac/Linux and send the output securely.
+**Do NOT use:** `openssl genpkey`, `openssl ecparam`, or keys without `RSA` in the header.
 
-#### Step B — Add to Codemagic
+#### Step B — Replace in Codemagic
 
 1. App **in-hand** → **Environment variables**
 2. Group: **`inhand_env`**

@@ -27,9 +27,16 @@ workflows:
       - name: Set up code signing and build IPA
         script: |
           if [ -z "$CERTIFICATE_PRIVATE_KEY" ]; then
-            echo "ERROR: Add CERTIFICATE_PRIVATE_KEY to Codemagic group inhand_env (see docs/CODEMAGIC_SETUP.md)"
+            echo "ERROR: Add CERTIFICATE_PRIVATE_KEY to Codemagic group inhand_env"
+            echo "Generate with: openssl genrsa 2048"
             exit 1
           fi
+          echo "$CERTIFICATE_PRIVATE_KEY" | openssl rsa -check -noout 2>/dev/null || {
+            echo "ERROR: CERTIFICATE_PRIVATE_KEY must be RSA 2048."
+            echo "Run: openssl genrsa 2048"
+            echo "Copy the full output (BEGIN RSA PRIVATE KEY ... END RSA PRIVATE KEY) into Codemagic."
+            exit 1
+          }
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
             --type IOS_APP_STORE \
             --create \
@@ -69,9 +76,16 @@ workflows:
       - name: Set up code signing and build IPA
         script: |
           if [ -z "$CERTIFICATE_PRIVATE_KEY" ]; then
-            echo "ERROR: Add CERTIFICATE_PRIVATE_KEY to Codemagic group inhand_env (see docs/CODEMAGIC_SETUP.md)"
+            echo "ERROR: Add CERTIFICATE_PRIVATE_KEY to Codemagic group inhand_env"
+            echo "Generate with: openssl genrsa 2048"
             exit 1
           fi
+          echo "$CERTIFICATE_PRIVATE_KEY" | openssl rsa -check -noout 2>/dev/null || {
+            echo "ERROR: CERTIFICATE_PRIVATE_KEY must be RSA 2048."
+            echo "Run: openssl genrsa 2048"
+            echo "Copy the full output (BEGIN RSA PRIVATE KEY ... END RSA PRIVATE KEY) into Codemagic."
+            exit 1
+          }
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
             --type IOS_APP_STORE \
             --create \
