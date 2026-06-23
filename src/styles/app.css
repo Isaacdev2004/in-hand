@@ -29,6 +29,12 @@
   box-sizing: border-box;
 }
 
+html {
+  overflow-x: hidden;
+  width: 100%;
+  max-width: 100%;
+}
+
 html,
 body,
 #root {
@@ -37,23 +43,31 @@ body,
 
 body {
   margin: 0;
+  overflow-x: hidden;
+  width: 100%;
+  max-width: 100%;
+  position: relative;
   font-family: var(--ih-font);
   color: var(--ih-text);
   background: #e9edf2;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  overscroll-behavior-x: none;
 }
 
 #root {
   width: 100%;
+  max-width: 100%;
   min-height: 100dvh;
+  overflow-x: hidden;
 }
 
 .inhand-shell {
   width: 100%;
-  max-width: var(--ih-content-max);
+  max-width: min(100%, var(--ih-content-max));
   min-height: 100dvh;
   margin: 0 auto;
+  overflow-x: hidden;
   display: grid;
   grid-template-columns: 1fr;
   background: var(--ih-bg);
@@ -190,7 +204,9 @@ html.capacitor-native.keyboard-open .inhand-bottom-nav {
 
 .inhand-main {
   flex: 1;
+  overflow-x: hidden;
   overflow-y: auto;
+  max-width: 100%;
   padding: 16px 16px calc(88px + env(safe-area-inset-bottom, 0px));
 }
 
@@ -330,11 +346,12 @@ html.capacitor-native.keyboard-open .inhand-bottom-nav {
 
 .inhand-bottom-nav {
   position: fixed;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 0;
+  right: 0;
   bottom: 0;
   width: 100%;
-  max-width: var(--ih-content-max);
+  max-width: min(100%, var(--ih-content-max));
+  margin: 0 auto;
   display: flex;
   justify-content: space-around;
   gap: 4px;
@@ -408,9 +425,12 @@ html.capacitor-native.keyboard-open .inhand-bottom-nav {
   display: flex;
   gap: 8px;
   overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
   padding-bottom: 4px;
   margin-bottom: 8px;
   scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
 }
 
 .inhand-chip-row::-webkit-scrollbar {

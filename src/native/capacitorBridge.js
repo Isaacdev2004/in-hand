@@ -3,12 +3,23 @@ import { App } from "@capacitor/app";
 import { StatusBar, Style } from "@capacitor/status-bar";
 import { SplashScreen } from "@capacitor/splash-screen";
 import { Keyboard } from "@capacitor/keyboard";
+import { supabase } from "../lib/supabaseClient";
+import { handleSupabaseAuthDeepLink, isAuthCallbackUrl } from "../lib/authRedirect";
 
-/** Deep-link / universal-link handler: ?tab=browse|vault|wallet etc. */
-function routeFromUrl(url) {
+/** Deep-link handler: auth callback or ?tab=browse|vault|wallet */
+async function handleIncomingUrl(url) {
   if (!url || typeof window === "undefined") return;
+
+  if (isAuthCallbackUrl(url) && supabase) {
+    const ok = await handleSupabaseAuthDeepLink(url, supabase);
+    if (ok) {
+      window.dispatchEvent(new CustomEvent("inhand:auth-complete"));
+      return;
+    }
+  }
+
   try {
-    const parsed = new URL(url);
+    const parsed = new URL(url.replace(/^inhand:\/\//, "https://inhand.local/"));
     const tab = parsed.searchParams.get("tab");
     if (tab) {
       window.dispatchEvent(new CustomEvent("inhand:navigate", { detail: { tab } }));
@@ -52,9 +63,9 @@ export async function initCapacitor() {
 
   try {
     const launch = await App.getLaunchUrl();
-    if (launch?.url) routeFromUrl(launch.url);
+    if (launch?.url) await handleIncomingUrl(launch.url);
     App.addListener("appUrlOpen", (event) => {
-      routeFromUrl(event.url);
+      handleIncomingUrl(event.url);
     });
   } catch (e) {
     console.warn("In Hand: App URL listeners skipped", e);

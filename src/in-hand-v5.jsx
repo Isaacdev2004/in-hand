@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { supabase } from "./lib/supabaseClient";
+import { getAuthRedirectUrl, handleSupabaseAuthDeepLink } from "./lib/authRedirect";
 import { fetchAppDatabaseShape, userFromRow } from "./lib/databaseToAppState";
 import {
   createListing,
@@ -2450,6 +2451,7 @@ function AuthScreen({ onAuth }) {
         email: form.email.trim(),
         password: form.password,
         options: {
+          emailRedirectTo: getAuthRedirectUrl(),
           data: {
             username: form.username.trim(),
             avatar: form.avatar,
@@ -2479,6 +2481,7 @@ function AuthScreen({ onAuth }) {
       const { error: resendErr } = await supabase.auth.resend({
         type: "signup",
         email: signupEmail,
+        options: { emailRedirectTo: getAuthRedirectUrl() },
       });
       if (resendErr) throw resendErr;
       setInfo("Another confirmation email is on its way.");
@@ -2518,7 +2521,7 @@ function AuthScreen({ onAuth }) {
     setInfo("");
     try {
       const { error: resetErr } = await supabase.auth.resetPasswordForEmail(form.email.trim(), {
-        redirectTo: `${window.location.origin}/`,
+        redirectTo: getAuthRedirectUrl(),
       });
       if (resetErr) throw resetErr;
       setInfo("If that email is registered, we sent a reset link. Check your inbox and spam.");
@@ -2626,7 +2629,8 @@ function AuthScreen({ onAuth }) {
                 We sent a <strong style={{ color:"#2C3E50" }}>confirmation link</strong> to<br/>
                 <strong style={{ color:"#2C3E50" }}>{signupEmail}</strong>
                 <br /><br />
-                Open the email, tap the link, then return here and <strong>sign in</strong> with the password you chose.
+                Open the email and tap the link — on iPhone it should open the <strong>In Hand</strong> app directly.
+                Then sign in with the password you chose.
               </div>
             </div>
             {error && <div style={{ color:"#ff6b6b", fontSize:12, fontWeight:600, marginBottom:12, textAlign:"center" }}>⚠️ {error}</div>}
@@ -3111,10 +3115,20 @@ export default function InHand() {
 
   useEffect(() => {
     if (typeof window === "undefined" || !supabase) return undefined;
-    const sync = () => setRecoveryOpen(window.location.hash.includes("type=recovery"));
-    sync();
-    window.addEventListener("hashchange", sync);
-    return () => window.removeEventListener("hashchange", sync);
+    const syncRecovery = () => setRecoveryOpen(window.location.hash.includes("type=recovery"));
+    const completeAuthFromUrl = async () => {
+      const href = window.location.href;
+      if (href.includes("access_token=") || href.includes("code=") || href.includes("/auth/callback")) {
+        const ok = await handleSupabaseAuthDeepLink(href, supabase);
+        if (ok && !window.location.hash.includes("type=recovery")) {
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+      }
+      syncRecovery();
+    };
+    completeAuthFromUrl();
+    window.addEventListener("hashchange", syncRecovery);
+    return () => window.removeEventListener("hashchange", syncRecovery);
   }, []);
 
   useEffect(() => {
