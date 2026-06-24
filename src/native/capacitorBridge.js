@@ -5,8 +5,9 @@ import { SplashScreen } from "@capacitor/splash-screen";
 import { Keyboard } from "@capacitor/keyboard";
 import { supabase } from "../lib/supabaseClient";
 import { handleSupabaseAuthDeepLink, isAuthCallbackUrl } from "../lib/authRedirect";
+import { isListingUrl, parseListingIdFromUrl } from "../lib/shareLinks";
 
-/** Deep-link handler: auth callback or ?tab=browse|vault|wallet */
+/** Deep-link handler: auth callback, listing share, or ?tab=browse|vault|wallet */
 async function handleIncomingUrl(url) {
   if (!url || typeof window === "undefined") return;
 
@@ -14,6 +15,19 @@ async function handleIncomingUrl(url) {
     const ok = await handleSupabaseAuthDeepLink(url, supabase);
     if (ok) {
       window.dispatchEvent(new CustomEvent("inhand:auth-complete"));
+      return;
+    }
+  }
+
+  if (isListingUrl(url)) {
+    const listingId = parseListingIdFromUrl(url);
+    if (listingId) {
+      try {
+        sessionStorage.setItem("inhand-pending-listing", listingId);
+      } catch {
+        /* ignore */
+      }
+      window.dispatchEvent(new CustomEvent("inhand:open-listing", { detail: { listingId } }));
       return;
     }
   }

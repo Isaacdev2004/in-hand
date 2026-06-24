@@ -1,0 +1,11 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "88L7JJ3Z28.com.inhand.collector",
+        "paths": ["/listing/*", "/auth/callback"]
+      }
+    ]
+  }
+}

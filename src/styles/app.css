@@ -49,7 +49,7 @@ body {
   position: relative;
   font-family: var(--ih-font);
   color: var(--ih-text);
-  background: #e9edf2;
+  background: var(--ih-bg);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   overscroll-behavior-x: none;
@@ -66,8 +66,9 @@ body {
   width: 100%;
   max-width: min(100%, var(--ih-content-max));
   min-height: 100dvh;
+  height: 100dvh;
   margin: 0 auto;
-  overflow-x: hidden;
+  overflow: hidden;
   display: grid;
   grid-template-columns: 1fr;
   background: var(--ih-bg);
@@ -79,7 +80,9 @@ body {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  min-height: 100dvh;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
 }
 
 .inhand-sidebar {
@@ -186,10 +189,31 @@ body {
   }
 }
 
-/* Native iOS shell (Capacitor) — extra bottom room above home indicator */
+/* Native iOS shell (Capacitor) — edge-to-edge, single safe-area pass */
+html.capacitor-native,
+html.capacitor-native body {
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--ih-bg);
+}
+
+html.capacitor-native #root {
+  height: 100dvh;
+  min-height: 0;
+}
+
+html.capacitor-native .inhand-shell {
+  max-width: 100%;
+  height: 100dvh;
+}
+
 html.capacitor-native .inhand-main,
 html.capacitor-native .inhand-page {
-  padding-bottom: calc(88px + var(--ih-safe-bottom));
+  padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+}
+
+html.capacitor-native .inhand-header {
+  padding-top: calc(8px + env(safe-area-inset-top, 0px));
 }
 
 html.capacitor-native.keyboard-open .inhand-bottom-nav {
@@ -204,17 +228,20 @@ html.capacitor-native.keyboard-open .inhand-bottom-nav {
 
 .inhand-main {
   flex: 1;
+  min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
   max-width: 100%;
-  padding: 16px 16px calc(88px + env(safe-area-inset-bottom, 0px));
+  padding: 12px 16px calc(72px + env(safe-area-inset-bottom, 0px));
+  -webkit-overflow-scrolling: touch;
 }
 
 .inhand-header {
   position: sticky;
   top: 0;
   z-index: 20;
-  padding: calc(12px + env(safe-area-inset-top, 0px)) 16px 12px;
+  flex-shrink: 0;
+  padding: calc(8px + env(safe-area-inset-top, 0px)) 16px 10px;
   background: rgba(244, 246, 248, 0.94);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--ih-border);
@@ -616,6 +643,23 @@ html.capacitor-native.keyboard-open .inhand-bottom-nav {
   font-weight: 600;
   cursor: pointer;
   padding: 0;
+}
+
+.inhand-auth-screen {
+  min-height: 100dvh;
+  width: 100%;
+  background: #eef2f7;
+  font-family: "Poppins", var(--ih-font);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  padding: calc(20px + env(safe-area-inset-top, 0px)) 20px calc(20px + env(safe-area-inset-bottom, 0px));
+}
+
+html.capacitor-native .inhand-auth-screen {
+  max-width: none;
+  margin: 0;
 }
 
 .inhand-section-title {

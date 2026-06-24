@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { supabase } from "./lib/supabaseClient";
 import { getAuthRedirectUrl, handleSupabaseAuthDeepLink } from "./lib/authRedirect";
+import { getListingShareUrl, parseListingIdFromUrl } from "./lib/shareLinks";
 import { fetchAppDatabaseShape, userFromRow } from "./lib/databaseToAppState";
 import {
   createListing,
@@ -2536,7 +2537,7 @@ function AuthScreen({ onAuth }) {
   const Spinner = () => <div style={{ width:20,height:20,border:"3px solid rgba(255,255,255,0.3)",borderTop:"3px solid #fff",borderRadius:"50%",animation:"spin 0.8s linear infinite",display:"inline-block" }} />;
 
   return (
-    <div style={{ minHeight:"100vh", background:"#EEF2F7", fontFamily:"'Poppins',sans-serif", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"20px", maxWidth:430, margin:"0 auto" }}>
+    <div className="inhand-auth-screen">
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap');
         *{box-sizing:border-box;margin:0;padding:0;}
@@ -2698,7 +2699,7 @@ function ShareModal({ card, owner, onClose, onOpenListingVideo }) {
   const [shared, setShared] = useState(null);
   const { from } = lc(card.line);
   const conditionText = condLabel(card.isNew);
-  const shareUrl = `https://inhand.app/listing/${card.id}`;
+  const shareUrl = getListingShareUrl(card.id);
   const shareText = `🔥 ${card.name} — ${conditionText} — $${card.value}\nAvailable on In Hand, the action figure exchange.\n${shareUrl}`;
 
   const copyLink = async () => {
@@ -3118,6 +3119,14 @@ export default function InHand() {
     const syncRecovery = () => setRecoveryOpen(window.location.hash.includes("type=recovery"));
     const completeAuthFromUrl = async () => {
       const href = window.location.href;
+      const listingId = parseListingIdFromUrl(window.location.pathname);
+      if (listingId) {
+        try {
+          sessionStorage.setItem("inhand-pending-listing", listingId);
+        } catch {
+          /* ignore */
+        }
+      }
       if (href.includes("access_token=") || href.includes("code=") || href.includes("/auth/callback")) {
         const ok = await handleSupabaseAuthDeepLink(href, supabase);
         if (ok && !window.location.hash.includes("type=recovery")) {
@@ -3473,6 +3482,40 @@ function AppShell({ onSignOut, authUser }) {
 
   useEffect(() => { if(myTradeable.length&&!selectedOffer) setSelectedOffer(myTradeable[0]); }, [myTradeable.length]);
   const notify = msg => { setToast(stripToastEmoji(msg)); setTimeout(()=>setToast(null),2500); };
+
+  const openListingById = (listingId) => {
+    const card = db.cards.find((c) => c.id === listingId);
+    if (!card) {
+      notify("Listing not found or no longer available.");
+      return;
+    }
+    setTab("browse");
+    if (card.wantsBuy) setCheckoutCard(card);
+    else setMarketModal(card);
+  };
+
+  useEffect(() => {
+    const onOpenListing = (e) => {
+      const id = e?.detail?.listingId;
+      if (id) openListingById(id);
+    };
+    window.addEventListener("inhand:open-listing", onOpenListing);
+    return () => window.removeEventListener("inhand:open-listing", onOpenListing);
+  }, [db.cards]);
+
+  useEffect(() => {
+    if (!dbLoaded) return;
+    let listingId =
+      parseListingIdFromUrl(window.location.pathname) ||
+      parseListingIdFromUrl(window.location.href);
+    if (!listingId && typeof sessionStorage !== "undefined") {
+      listingId = sessionStorage.getItem("inhand-pending-listing");
+      if (listingId) sessionStorage.removeItem("inhand-pending-listing");
+    }
+    if (!listingId) return;
+    openListingById(listingId);
+    window.history.replaceState({}, document.title, "/");
+  }, [dbLoaded, db.cards]);
 
   const openEditProfile = (tabId = "profile") => {
     setEditProfileTab(tabId);

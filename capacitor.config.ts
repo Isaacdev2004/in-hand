@@ -9,9 +9,9 @@ const config: CapacitorConfig = {
     iosScheme: "https",
   },
   ios: {
-    contentInset: "automatic",
+    contentInset: "never",
     scrollEnabled: true,
-    backgroundColor: "#15202b",
+    backgroundColor: "#f4f6f8",
   },
   plugins: {
     SplashScreen: {
