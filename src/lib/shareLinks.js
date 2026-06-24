@@ -1,4 +1,6 @@
-/** Public web origin for share links (Universal Links on iOS). */
+import { Capacitor } from "@capacitor/core";
+
+/** Public web origin for listing pages on the web. */
 export const DEFAULT_WEB_ORIGIN = "https://in-hand-b5gm.vercel.app";
 
 export function getWebOrigin() {
@@ -8,13 +10,20 @@ export function getWebOrigin() {
   return process.env.REACT_APP_PUBLIC_ORIGIN || DEFAULT_WEB_ORIGIN;
 }
 
-/** HTTPS link shared in messages — opens the app when Universal Links are configured. */
-export function getListingShareUrl(listingId) {
-  return `${getWebOrigin()}/listing/${listingId}`;
-}
-
 export function getListingDeepLink(listingId) {
   return `inhand://listing/${listingId}`;
+}
+
+/**
+ * Link copied/shared from the app.
+ * Native: inhand:// opens In Hand directly (no Universal Links / extra signing needed).
+ * Web: https URL for browser users.
+ */
+export function getListingShareUrl(listingId) {
+  if (typeof window !== "undefined" && Capacitor.isNativePlatform()) {
+    return getListingDeepLink(listingId);
+  }
+  return `${getWebOrigin()}/listing/${listingId}`;
 }
 
 /** Extract listing id from inhand:// or https://…/listing/{id} URLs. */
