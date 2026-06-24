@@ -1,21 +1,19 @@
 # Share links
 
-Shared listings from the **iOS app** use:
-
-`inhand://listing/{listing-id}`
-
-Tapping that link opens **In Hand** directly (custom URL scheme — no extra Apple signing setup).
-
-The **web app** shares:
+Shared listings use a **clickable HTTPS link**:
 
 `https://in-hand-b5gm.vercel.app/listing/{listing-id}`
 
+Works in WhatsApp, iMessage, SMS, etc.
+
+## Opening the app
+
+When someone taps the link on a phone:
+
+1. The web page loads briefly
+2. It redirects to `inhand://listing/{id}` to open **In Hand**
+3. If the app is not installed, the listing opens in the web app instead
+
 ## Universal Links (optional, later)
 
-To make `https://…` links open the app automatically, Danny must:
-
-1. Apple Developer → **Identifiers** → `com.inhand.collector` → enable **Associated Domains**
-2. Regenerate the App Store provisioning profile in Codemagic
-3. Re-add `App.entitlements` with `applinks:in-hand-b5gm.vercel.app`
-
-The repo already includes `public/.well-known/apple-app-site-association` on Vercel for when that is enabled.
+For links to open the app **without** a browser flash, enable **Associated Domains** on the Apple App ID and re-add entitlements (see prior build notes).

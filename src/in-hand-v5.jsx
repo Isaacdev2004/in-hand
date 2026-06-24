@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from "react";
 import { supabase } from "./lib/supabaseClient";
+import { Capacitor } from "@capacitor/core";
 import { getAuthRedirectUrl, handleSupabaseAuthDeepLink } from "./lib/authRedirect";
-import { getListingShareUrl, parseListingIdFromUrl } from "./lib/shareLinks";
+import { getListingShareUrl, parseListingIdFromUrl, tryOpenListingInApp } from "./lib/shareLinks";
 import { fetchAppDatabaseShape, userFromRow } from "./lib/databaseToAppState";
 import {
   createListing,
@@ -2715,8 +2716,16 @@ function ShareModal({ card, owner, onClose, onOpenListingVideo }) {
   };
 
   const nativeShare = async () => {
-    if (navigator.share) { try { await navigator.share({ title:card.name, text:shareText, url:shareUrl }); } catch {} }
-    else copyLink();
+    const blurb = `🔥 ${card.name} — ${conditionText} — $${card.value}\nAvailable on In Hand, the action figure exchange.`;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: card.name, text: blurb, url: shareUrl });
+      } catch {
+        /* cancelled */
+      }
+    } else {
+      copyLink();
+    }
   };
 
   const PLATFORMS = [
@@ -3125,6 +3134,9 @@ export default function InHand() {
           sessionStorage.setItem("inhand-pending-listing", listingId);
         } catch {
           /* ignore */
+        }
+        if (!Capacitor.isNativePlatform()) {
+          tryOpenListingInApp(listingId);
         }
       }
       if (href.includes("access_token=") || href.includes("code=") || href.includes("/auth/callback")) {

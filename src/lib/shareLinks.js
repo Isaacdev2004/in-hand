@@ -1,6 +1,4 @@
-import { Capacitor } from "@capacitor/core";
-
-/** Public web origin for listing pages on the web. */
+/** Public web origin for listing pages (clickable in iMessage, WhatsApp, etc.). */
 export const DEFAULT_WEB_ORIGIN = "https://in-hand-b5gm.vercel.app";
 
 export function getWebOrigin() {
@@ -14,16 +12,17 @@ export function getListingDeepLink(listingId) {
   return `inhand://listing/${listingId}`;
 }
 
-/**
- * Link copied/shared from the app.
- * Native: inhand:// opens In Hand directly (no Universal Links / extra signing needed).
- * Web: https URL for browser users.
- */
+/** HTTPS link — clickable in messages; mobile web redirects into the app. */
 export function getListingShareUrl(listingId) {
-  if (typeof window !== "undefined" && Capacitor.isNativePlatform()) {
-    return getListingDeepLink(listingId);
-  }
   return `${getWebOrigin()}/listing/${listingId}`;
+}
+
+/** On mobile browser, jump to the native app (stays on web if app missing). */
+export function tryOpenListingInApp(listingId) {
+  if (typeof window === "undefined" || !listingId) return;
+  const mobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  if (!mobile) return;
+  window.location.href = getListingDeepLink(listingId);
 }
 
 /** Extract listing id from inhand:// or https://…/listing/{id} URLs. */
