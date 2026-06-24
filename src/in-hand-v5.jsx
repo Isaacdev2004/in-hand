@@ -1954,12 +1954,13 @@ function MessagingScreen({ threads, activeThreadId, setActiveThread, currentUser
 
   // ── THREAD LIST ──
   if (!activeThreadId) return (
-    <div style={{ flex:1, overflowY:"auto", padding:"20px 20px 90px" }}>
+    <div className="inhand-messages">
+      <div className="inhand-messages-list">
       <div style={{ fontWeight:800, fontSize:18, color:"#2C3E50", marginBottom:4 }}>Messages 💬</div>
       <div style={{ fontSize:12, color:"#bbb", marginBottom:16 }}>Your trade conversations</div>
 
       {threads.length === 0 ? (
-        <div style={{ textAlign:"center", padding:"60px 0" }}>
+        <div style={{ textAlign:"center", padding:"40px 0" }}>
           <div style={{ fontSize:52, marginBottom:14 }}>💬</div>
           <div style={{ fontWeight:700, fontSize:16, color:"#bbb" }}>No messages yet</div>
           <div style={{ fontSize:12, color:"#ccc", marginTop:6 }}>Start a conversation from any listing</div>
@@ -1999,6 +2000,7 @@ function MessagingScreen({ threads, activeThreadId, setActiveThread, currentUser
           </div>
         );
       })}
+      </div>
     </div>
   );
 
@@ -2007,10 +2009,10 @@ function MessagingScreen({ threads, activeThreadId, setActiveThread, currentUser
   const other = getUser(otherId);
 
   return (
-    <div style={{ flex:1, display:"flex", flexDirection:"column", maxHeight:"100%", overflow:"hidden" }}>
+    <div className="inhand-messages inhand-messages-chat">
 
       {/* Chat header */}
-      <div style={{ background:"#fff", borderBottom:"1px solid #E4EBF2", padding:"12px 16px", display:"flex", alignItems:"center", gap:12, flexShrink:0 }}>
+      <div className="inhand-messages-chat-header">
         <button onClick={() => { setActiveThread(null); setBlocked(null); }} style={{ background:"#E4EBF2", border:"none", borderRadius:10, padding:"6px 10px", fontWeight:700, fontSize:13, color:"#555", cursor:"pointer" }}>←</button>
         <div style={{ width:38, height:38, borderRadius:"50%", background:"#E4EBF2", display:"flex", alignItems:"center", justifyContent:"center", fontSize:22 }}>{other?.avatar}</div>
         <div style={{ flex:1 }}>
@@ -2030,13 +2032,13 @@ function MessagingScreen({ threads, activeThreadId, setActiveThread, currentUser
 
       {/* Safety banner */}
       {!showWarning ? (
-        <div style={{ background:"#EAF1FA", borderBottom:"1px solid #DCE6F0", padding:"8px 16px", display:"flex", alignItems:"center", gap:8, cursor:"pointer" }} onClick={()=>setShowWarning(true)}>
+        <div className="inhand-messages-banner" style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer" }} onClick={()=>setShowWarning(true)}>
           <span style={{ fontSize:14 }}>🛡️</span>
           <span style={{ fontSize:11, color:"#3A7BD5", fontWeight:600, flex:1 }}>Keep conversations on In Hand for your protection</span>
           <span style={{ fontSize:11, color:"#90B8E8", fontWeight:700 }}>Why? ›</span>
         </div>
       ) : (
-        <div style={{ background:"#EAF1FA", borderBottom:"1px solid #DCE6F0", padding:"12px 16px" }}>
+        <div className="inhand-messages-banner">
           <div style={{ fontWeight:800, fontSize:13, color:"#3A7BD5", marginBottom:6 }}>🛡️ Why we keep chats on platform</div>
           <div style={{ fontSize:11, color:"#555", lineHeight:1.6, marginBottom:8 }}>
             Sharing phone numbers, emails, or social handles bypasses our escrow protection. If a deal goes wrong off-platform, we can't help you recover funds or resolve disputes. Sharing payment apps like Venmo or CashApp also voids buyer protection.
@@ -2049,9 +2051,9 @@ function MessagingScreen({ threads, activeThreadId, setActiveThread, currentUser
       )}
 
       {/* Messages */}
-      <div style={{ flex:1, overflowY:"auto", padding:"16px", display:"flex", flexDirection:"column", gap:10, paddingBottom:100 }}>
+      <div className="inhand-messages-scroll">
         {thread?.messages.length === 0 && (
-          <div style={{ textAlign:"center", padding:"40px 0", color:"#ccc" }}>
+          <div style={{ textAlign:"center", padding:"24px 0", color:"#ccc" }}>
             <div style={{ fontSize:36, marginBottom:8 }}>👋</div>
             <div style={{ fontSize:13, fontWeight:600 }}>Say hi to {other?.username}!</div>
             <div style={{ fontSize:11, color:"#ddd", marginTop:4 }}>Ask about accessories, condition, yellowing — anything!</div>
@@ -2085,7 +2087,7 @@ function MessagingScreen({ threads, activeThreadId, setActiveThread, currentUser
 
       {/* Blocked message warning */}
       {blocked && (
-        <div style={{ background:"#fff0f0", borderTop:"2px solid #ff6b6b", padding:"10px 16px", display:"flex", gap:10, alignItems:"flex-start", flexShrink:0 }}>
+        <div className="inhand-messages-blocked" style={{ display:"flex", gap:10, alignItems:"flex-start" }}>
           <span style={{ fontSize:18, flexShrink:0 }}>🚫</span>
           <div>
             <div style={{ fontWeight:800, fontSize:12, color:"#ff6b6b" }}>Message blocked — {blocked.label} detected</div>
@@ -2095,17 +2097,20 @@ function MessagingScreen({ threads, activeThreadId, setActiveThread, currentUser
       )}
 
       {/* Input */}
-      <div style={{ position:"absolute", bottom:70, left:0, right:0, maxWidth:430, margin:"0 auto", background:"rgba(255,255,255,0.98)", borderTop:"1px solid #E4EBF2", padding:"10px 16px", display:"flex", gap:10, alignItems:"center", backdropFilter:"blur(12px)" }}>
+      <div className="inhand-messages-composer">
         <input
           value={input}
           onChange={e => handleInputChange(e.target.value)}
           onKeyDown={e => { if (e.key==="Enter") handleSend(); }}
           placeholder="Message…"
-          style={{ flex:1, background: blocked?"#fff0f0":"#EEF2F7", border: blocked?"2px solid #ff6b6b":"none", borderRadius:20, padding:"10px 16px", fontSize:13, fontFamily:"'Poppins',sans-serif", outline:"none", color:"#2C3E50", transition:"background 0.2s" }}
+          data-blocked={blocked ? "true" : "false"}
         />
         <button
+          type="button"
           onClick={handleSend}
-          style={{ width:40, height:40, borderRadius:"50%", background:input.trim()&&!blocked?"#2C3E50":"#E4EBF2", border:"none", display:"flex", alignItems:"center", justifyContent:"center", cursor:input.trim()&&!blocked?"pointer":"default", fontSize:18, transition:"background 0.15s" }}
+          className="inhand-messages-send"
+          data-active={input.trim() && !blocked ? "true" : "false"}
+          aria-label="Send message"
         >➤</button>
       </div>
     </div>
@@ -4414,6 +4419,7 @@ function AppShell({ onSignOut, authUser }) {
       </aside>
 
       <div className="inhand-app-body">
+      {!(tab === "messages" && activeThread) && (
       <header className="inhand-header">
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
           <div className="inhand-brand-lockup">
@@ -4448,6 +4454,7 @@ function AppShell({ onSignOut, authUser }) {
           ))}
         </div>
       </header>
+      )}
 
       {/* ── BROWSE ── */}
       {tab==="browse" && (
