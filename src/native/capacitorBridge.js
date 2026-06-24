@@ -65,12 +65,29 @@ export async function initCapacitor() {
   }
 
   try {
-    Keyboard.addListener("keyboardWillShow", () => {
+    const setKeyboardHeight = (height) => {
+      const px = `${Math.max(0, height)}px`;
+      document.documentElement.style.setProperty("--ih-keyboard-height", px);
+    };
+
+    Keyboard.addListener("keyboardWillShow", (info) => {
       document.body.classList.add("keyboard-open");
+      setKeyboardHeight(info.keyboardHeight ?? 0);
+      window.dispatchEvent(new CustomEvent("inhand:keyboard-show"));
     });
     Keyboard.addListener("keyboardWillHide", () => {
       document.body.classList.remove("keyboard-open");
+      setKeyboardHeight(0);
     });
+
+    if (window.visualViewport) {
+      const syncViewport = () => {
+        if (!document.body.classList.contains("keyboard-open")) return;
+        const offset = window.innerHeight - window.visualViewport.height;
+        if (offset > 50) setKeyboardHeight(offset);
+      };
+      window.visualViewport.addEventListener("resize", syncViewport);
+    }
   } catch (e) {
     console.warn("In Hand: Keyboard listeners skipped", e);
   }

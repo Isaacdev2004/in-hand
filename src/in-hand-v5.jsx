@@ -1927,11 +1927,25 @@ function MessagingScreen({ threads, activeThreadId, setActiveThread, currentUser
   const [blocked, setBlocked] = useState(null); // { label } when blocked
   const [showWarning, setShowWarning] = useState(false);
   const bottomRef = useRef(null);
+  const inputRef = useRef(null);
   const thread = threads.find(t => t.id === activeThreadId);
 
+  const scrollToBottom = () => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  };
+
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    scrollToBottom();
   }, [thread?.messages?.length, activeThreadId]);
+
+  useEffect(() => {
+    const onKeyboard = () => {
+      setTimeout(scrollToBottom, 50);
+      setTimeout(scrollToBottom, 300);
+    };
+    window.addEventListener("inhand:keyboard-show", onKeyboard);
+    return () => window.removeEventListener("inhand:keyboard-show", onKeyboard);
+  }, [activeThreadId]);
 
   const handleSend = () => {
     const text = input.trim();
@@ -2009,7 +2023,7 @@ function MessagingScreen({ threads, activeThreadId, setActiveThread, currentUser
   const other = getUser(otherId);
 
   return (
-    <div className="inhand-messages inhand-messages-chat">
+    <div className="inhand-messages inhand-messages-chat inhand-messages-chat--active">
 
       {/* Chat header */}
       <div className="inhand-messages-chat-header">
@@ -2099,8 +2113,13 @@ function MessagingScreen({ threads, activeThreadId, setActiveThread, currentUser
       {/* Input */}
       <div className="inhand-messages-composer">
         <input
+          ref={inputRef}
           value={input}
           onChange={e => handleInputChange(e.target.value)}
+          onFocus={() => {
+            setTimeout(scrollToBottom, 100);
+            setTimeout(scrollToBottom, 350);
+          }}
           onKeyDown={e => { if (e.key==="Enter") handleSend(); }}
           placeholder="Message…"
           data-blocked={blocked ? "true" : "false"}
@@ -5460,6 +5479,7 @@ function AppShell({ onSignOut, authUser }) {
         </div>
       )}
 
+      {!(tab === "messages" && activeThread) && (
       <nav className="inhand-bottom-nav" aria-label="Primary">
         {NAV_ITEMS.map(([id, label]) => (
           <button key={id} type="button" data-active={tab === id ? "true" : "false"} onClick={() => goToTab(id)}>
@@ -5468,6 +5488,7 @@ function AppShell({ onSignOut, authUser }) {
           </button>
         ))}
       </nav>
+      )}
       </div>
     </div>
   );
