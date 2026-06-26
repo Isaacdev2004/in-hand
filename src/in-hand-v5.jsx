@@ -2117,8 +2117,12 @@ function MessagingScreen({ threads, activeThreadId, setActiveThread, currentUser
           value={input}
           onChange={e => handleInputChange(e.target.value)}
           onFocus={() => {
-            setTimeout(scrollToBottom, 100);
-            setTimeout(scrollToBottom, 350);
+            requestAnimationFrame(() => {
+              inputRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+              scrollToBottom();
+            });
+            setTimeout(scrollToBottom, 150);
+            setTimeout(scrollToBottom, 400);
           }}
           onKeyDown={e => { if (e.key==="Enter") handleSend(); }}
           placeholder="Message…"

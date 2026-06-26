@@ -66,11 +66,33 @@ export async function initCapacitor() {
 
   try {
     const setKeyboardHeight = (height) => {
-      const px = `${Math.max(0, height)}px`;
+      const px = `${Math.max(0, Math.round(height))}px`;
       document.documentElement.style.setProperty("--ih-keyboard-height", px);
     };
 
+    const syncKeyboardFromViewport = () => {
+      const vv = window.visualViewport;
+      if (!vv) return;
+      const inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      if (inset > 60) {
+        document.body.classList.add("keyboard-open");
+        setKeyboardHeight(inset);
+        window.dispatchEvent(new CustomEvent("inhand:keyboard-show"));
+      } else if (inset < 24) {
+        document.body.classList.remove("keyboard-open");
+        setKeyboardHeight(0);
+      }
+    };
+
+    Keyboard.setScroll({ isDisabled: true }).catch(() => {});
+
     Keyboard.addListener("keyboardWillShow", (info) => {
+      document.body.classList.add("keyboard-open");
+      setKeyboardHeight(info.keyboardHeight ?? 0);
+      window.dispatchEvent(new CustomEvent("inhand:keyboard-show"));
+      setTimeout(syncKeyboardFromViewport, 50);
+    });
+    Keyboard.addListener("keyboardDidShow", (info) => {
       document.body.classList.add("keyboard-open");
       setKeyboardHeight(info.keyboardHeight ?? 0);
       window.dispatchEvent(new CustomEvent("inhand:keyboard-show"));
@@ -79,14 +101,14 @@ export async function initCapacitor() {
       document.body.classList.remove("keyboard-open");
       setKeyboardHeight(0);
     });
+    Keyboard.addListener("keyboardDidHide", () => {
+      document.body.classList.remove("keyboard-open");
+      setKeyboardHeight(0);
+    });
 
     if (window.visualViewport) {
-      const syncViewport = () => {
-        if (!document.body.classList.contains("keyboard-open")) return;
-        const offset = window.innerHeight - window.visualViewport.height;
-        if (offset > 50) setKeyboardHeight(offset);
-      };
-      window.visualViewport.addEventListener("resize", syncViewport);
+      window.visualViewport.addEventListener("resize", syncKeyboardFromViewport);
+      window.visualViewport.addEventListener("scroll", syncKeyboardFromViewport);
     }
   } catch (e) {
     console.warn("In Hand: Keyboard listeners skipped", e);
