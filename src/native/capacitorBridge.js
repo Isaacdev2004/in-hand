@@ -3,6 +3,7 @@ import { App } from "@capacitor/app";
 import { StatusBar, Style } from "@capacitor/status-bar";
 import { SplashScreen } from "@capacitor/splash-screen";
 import { Keyboard } from "@capacitor/keyboard";
+import { initViewportSync } from "./viewportSync";
 import { supabase } from "../lib/supabaseClient";
 import { handleSupabaseAuthDeepLink, isAuthCallbackUrl } from "../lib/authRedirect";
 import { isListingUrl, parseListingIdFromUrl } from "../lib/shareLinks";
@@ -65,53 +66,10 @@ export async function initCapacitor() {
   }
 
   try {
-    const setKeyboardHeight = (height) => {
-      const px = `${Math.max(0, Math.round(height))}px`;
-      document.documentElement.style.setProperty("--ih-keyboard-height", px);
-    };
-
-    const syncKeyboardFromViewport = () => {
-      const vv = window.visualViewport;
-      if (!vv) return;
-      const inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-      if (inset > 60) {
-        document.body.classList.add("keyboard-open");
-        setKeyboardHeight(inset);
-        window.dispatchEvent(new CustomEvent("inhand:keyboard-show"));
-      } else if (inset < 24) {
-        document.body.classList.remove("keyboard-open");
-        setKeyboardHeight(0);
-      }
-    };
-
+    initViewportSync();
     Keyboard.setScroll({ isDisabled: true }).catch(() => {});
-
-    Keyboard.addListener("keyboardWillShow", (info) => {
-      document.body.classList.add("keyboard-open");
-      setKeyboardHeight(info.keyboardHeight ?? 0);
-      window.dispatchEvent(new CustomEvent("inhand:keyboard-show"));
-      setTimeout(syncKeyboardFromViewport, 50);
-    });
-    Keyboard.addListener("keyboardDidShow", (info) => {
-      document.body.classList.add("keyboard-open");
-      setKeyboardHeight(info.keyboardHeight ?? 0);
-      window.dispatchEvent(new CustomEvent("inhand:keyboard-show"));
-    });
-    Keyboard.addListener("keyboardWillHide", () => {
-      document.body.classList.remove("keyboard-open");
-      setKeyboardHeight(0);
-    });
-    Keyboard.addListener("keyboardDidHide", () => {
-      document.body.classList.remove("keyboard-open");
-      setKeyboardHeight(0);
-    });
-
-    if (window.visualViewport) {
-      window.visualViewport.addEventListener("resize", syncKeyboardFromViewport);
-      window.visualViewport.addEventListener("scroll", syncKeyboardFromViewport);
-    }
   } catch (e) {
-    console.warn("In Hand: Keyboard listeners skipped", e);
+    console.warn("In Hand: Keyboard/viewport init skipped", e);
   }
 
   try {

@@ -25,7 +25,8 @@
   --ih-font: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --ih-bottom-nav-height: calc(56px + env(safe-area-inset-bottom, 0px));
   --ih-composer-height: 60px;
-  --ih-keyboard-height: 0px;
+  --ih-vv-top: 0px;
+  --ih-vv-height: 100dvh;
 }
 
 * {
@@ -676,25 +677,26 @@ html.capacitor-native.keyboard-open .inhand-bottom-nav {
   overflow: hidden;
 }
 
-/* Full-screen chat on native — whole view lifts above keyboard */
+/* Full-screen chat — sized to visible viewport (keyboard-aware on iOS) */
 html.capacitor-native .inhand-messages-chat--active {
   position: fixed;
-  top: 0;
+  top: var(--ih-vv-top, 0px);
   left: 0;
   right: 0;
-  bottom: 0;
+  width: 100%;
+  height: var(--ih-vv-height, 100dvh);
+  max-height: var(--ih-vv-height, 100dvh);
   z-index: 50;
-  height: auto;
   min-height: 0;
   background: var(--ih-bg);
 }
 
-html.capacitor-native.keyboard-open .inhand-messages-chat--active {
-  bottom: var(--ih-keyboard-height);
+html.capacitor-native .inhand-messages-banner {
+  display: none;
 }
 
-html.capacitor-native.keyboard-open .inhand-messages-banner {
-  display: none;
+html.capacitor-native.keyboard-open .inhand-messages-chat-header {
+  padding-top: 8px;
 }
 
 .inhand-messages-chat-header {
@@ -750,6 +752,10 @@ html.capacitor-native .inhand-messages-chat-header {
 }
 
 html.capacitor-native .inhand-messages-chat--active .inhand-messages-composer {
+  padding-bottom: max(8px, env(safe-area-inset-bottom, 0px));
+}
+
+html.capacitor-native.keyboard-open .inhand-messages-chat--active .inhand-messages-composer {
   padding-bottom: 8px;
 }
 

@@ -1927,11 +1927,17 @@ function MessagingScreen({ threads, activeThreadId, setActiveThread, currentUser
   const [blocked, setBlocked] = useState(null); // { label } when blocked
   const [showWarning, setShowWarning] = useState(false);
   const bottomRef = useRef(null);
+  const scrollRef = useRef(null);
   const inputRef = useRef(null);
   const thread = threads.find(t => t.id === activeThreadId);
 
   const scrollToBottom = () => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    const el = scrollRef.current;
+    if (el) {
+      el.scrollTop = el.scrollHeight;
+      return;
+    }
+    bottomRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
   };
 
   useEffect(() => {
@@ -2065,7 +2071,7 @@ function MessagingScreen({ threads, activeThreadId, setActiveThread, currentUser
       )}
 
       {/* Messages */}
-      <div className="inhand-messages-scroll">
+      <div className="inhand-messages-scroll" ref={scrollRef}>
         {thread?.messages.length === 0 && (
           <div style={{ textAlign:"center", padding:"24px 0", color:"#ccc" }}>
             <div style={{ fontSize:36, marginBottom:8 }}>👋</div>
