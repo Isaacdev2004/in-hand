@@ -9,7 +9,7 @@ const config: CapacitorConfig = {
     iosScheme: "https",
   },
   ios: {
-    contentInset: "never",
+    contentInset: "automatic",
     scrollEnabled: true,
     backgroundColor: "#f4f6f8",
   },
@@ -26,7 +26,7 @@ const config: CapacitorConfig = {
       backgroundColor: "#15202b",
     },
     Keyboard: {
-      resize: "none",
+      resize: "native",
       resizeOnFullScreen: true,
     },
   },

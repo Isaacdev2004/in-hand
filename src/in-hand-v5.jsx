@@ -3335,6 +3335,11 @@ function AppShell({ onSignOut, authUser }) {
   const [disputeModal, setDisputeModal] = useState(null);
   const [ratingModal, setRatingModal] = useState(null);
   const [activeThread, setActiveThread] = useState(null);
+  useEffect(() => {
+    const inChat = tab === "messages" && activeThread;
+    document.documentElement.classList.toggle("inhand-chat-active", !!inChat);
+    return () => document.documentElement.classList.remove("inhand-chat-active");
+  }, [tab, activeThread]);
   const [adminView, setAdminView] = useState("users");
   const [photoViewer, setPhotoViewer] = useState(null);
   const [listingVideoModal, setListingVideoModal] = useState(null);

@@ -3,7 +3,6 @@ import { App } from "@capacitor/app";
 import { StatusBar, Style } from "@capacitor/status-bar";
 import { SplashScreen } from "@capacitor/splash-screen";
 import { Keyboard } from "@capacitor/keyboard";
-import { initViewportSync } from "./viewportSync";
 import { supabase } from "../lib/supabaseClient";
 import { handleSupabaseAuthDeepLink, isAuthCallbackUrl } from "../lib/authRedirect";
 import { isListingUrl, parseListingIdFromUrl } from "../lib/shareLinks";
@@ -66,10 +65,15 @@ export async function initCapacitor() {
   }
 
   try {
-    initViewportSync();
-    Keyboard.setScroll({ isDisabled: true }).catch(() => {});
+    Keyboard.addListener("keyboardWillShow", () => {
+      document.body.classList.add("keyboard-open");
+      window.dispatchEvent(new CustomEvent("inhand:keyboard-show"));
+    });
+    Keyboard.addListener("keyboardWillHide", () => {
+      document.body.classList.remove("keyboard-open");
+    });
   } catch (e) {
-    console.warn("In Hand: Keyboard/viewport init skipped", e);
+    console.warn("In Hand: Keyboard listeners skipped", e);
   }
 
   try {
