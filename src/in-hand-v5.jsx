@@ -11,6 +11,10 @@ import {
   swapTradeListings,
 } from "./lib/listingsApi";
 import {
+  formatListingSaveError,
+  resolveListingPhotosForSave,
+} from "./lib/listingPhotos";
+import {
   upsertTransaction,
   updateTransaction,
   upsertShipment,
@@ -3788,10 +3792,34 @@ function AppShell({ onSignOut, authUser }) {
 
   const handleAddCard = async (card) => {
     if (supabase) {
-      const { error } = await createListing(card);
-      if (error) {
-        console.error("In Hand: create listing failed", error);
-        notify("❌ Could not save figure to Supabase");
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) {
+          notify("❌ Sign in again to save to your vault.");
+          return;
+        }
+        await ensureUserProfile(user);
+
+        const photos = await resolveListingPhotosForSave(
+          card.photos,
+          user.id,
+          card.id
+        );
+        const toSave = {
+          ...card,
+          ownerId: user.id,
+          photos,
+          image: photos[0] || card.image,
+        };
+
+        const { error } = await createListing(toSave);
+        if (error) throw error;
+        card = toSave;
+      } catch (e) {
+        console.error("In Hand: create listing failed", e);
+        notify(`❌ ${formatListingSaveError(e)}`);
         return;
       }
     }
