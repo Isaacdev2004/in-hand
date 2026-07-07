@@ -417,8 +417,9 @@ html.capacitor-native.keyboard-open .inhand-bottom-nav {
   position: relative;
 }
 
-.inhand-bottom-nav button[data-active="true"] {
-  color: var(--ih-accent);
+.inhand-bottom-nav button span:first-child {
+  font-size: 17px;
+  line-height: 1;
 }
 
 .inhand-bottom-nav button span:last-child {

@@ -8,8 +8,12 @@ import {
   createListing,
   updateListing,
   deleteListing,
-  swapTradeListings,
 } from "./lib/listingsApi";
+import {
+  insertTradeProposal,
+  updateTradeProposal,
+  executeTradeProposal,
+} from "./lib/tradeProposalsApi";
 import {
   formatListingSaveError,
   resolveListingPhotosForSave,
@@ -300,15 +304,21 @@ const trackingStepIndex = (status) => status==="delivered"?4:status==="out_for_d
 
 const DEFAULT_USER_ID = "u1";
 
-const NAV_ITEMS = [
+const TOP_NAV_ITEMS = [
   ["browse", "Browse"],
   ["trades", "Trades"],
   ["vault", "Vault"],
-  ["messages", "Chat"],
-  ["shipping", "Shipping"],
-  ["wallet", "Wallet"],
-  ["account", "Account"],
 ];
+const BOTTOM_NAV_ITEMS = [
+  ["wallet", "Wallet", "💰"],
+  ["messages", "Messages", "💬"],
+  ["shipping", "Ship", "📦"],
+  ["account", "Account", "👤"],
+];
+const ALL_NAV_TABS = new Set([
+  ...TOP_NAV_ITEMS.map(([id]) => id),
+  ...BOTTOM_NAV_ITEMS.map(([id]) => id),
+]);
 
 const EMPTY_DB = {
   users: [],
@@ -319,6 +329,7 @@ const EMPTY_DB = {
   ratings: [],
   messages: [],
   notifications: [],
+  tradeProposals: [],
 };
 const fmt = (n) => n.toFixed(2);
 
@@ -355,6 +366,246 @@ function CyclingSubtitle() {
 const IS = { background:"#fff", border:"1px solid #d8e0ea", borderRadius:14, padding:"12px 14px", fontSize:14, fontFamily:UI_FONT, fontWeight:500, color:"#15202b", width:"100%", outline:"none" };
 const TS = (on) => ({ flex:1, background:on?"#2C3E50":"#E4EBF2", border:"none", borderRadius:10, padding:"9px", textAlign:"center", fontSize:12, fontWeight:700, color:on?"#fff":"#aaa", cursor:"pointer", transition:"all 0.15s" });
 const Btn = ({ children, onClick, style = {}, type = "button", disabled }) => <button type={type} onClick={onClick} disabled={disabled} style={{ border:"none", borderRadius:12, padding:"12px", fontWeight:700, fontSize:14, cursor:disabled?"not-allowed":"pointer", fontFamily:UI_FONT, ...style }}>{children}</button>;
+
+// ─── LISTING DETAIL (v1.6) ────────────────────────────────────────────────────
+function ListingDetailView({ card, owner, myVault, onBack, onSendProposal, onBuy, onMessage, onOpenPhotos, onOpenVideo }) {
+  const [sheet, setSheet] = useState(null);
+  const [tradePicks, setTradePicks] = useState([]);
+  const [topupAmount, setTopupAmount] = useState("0");
+  const [tradeStep, setTradeStep] = useState("pick");
+  const [msgText, setMsgText] = useState("");
+  const [msgDone, setMsgDone] = useState(false);
+
+  const closeSheet = () => {
+    setSheet(null);
+    setTradePicks([]);
+    setTopupAmount("0");
+    setTradeStep("pick");
+    setMsgDone(false);
+    setMsgText("");
+  };
+
+  const togglePick = (fig) => {
+    setTradePicks((p) => (p.some((f) => f.id === fig.id) ? p.filter((f) => f.id !== fig.id) : [...p, fig]));
+  };
+
+  const myTotal = tradePicks.reduce((s, f) => s + f.value, 0);
+  const gap = card.value - myTotal;
+  const inMyFavour = gap < 0;
+  const hasTopup = topupAmount && parseInt(topupAmount, 10) > 0;
+
+  const topupChips = [0, Math.round(Math.abs(gap) * 0.25), Math.round(Math.abs(gap) * 0.5), Math.round(Math.abs(gap) * 0.75), Math.abs(gap)]
+    .filter((v, i, a) => a.indexOf(v) === i && v >= 0);
+
+  return (
+    <div className="inhand-listing-detail" style={{ flex: 1, display: "flex", flexDirection: "column", overflowY: "auto", paddingBottom: 100 }}>
+      <div style={{ background: "linear-gradient(160deg,#1a2a3a 0%,#2C3E50 40%,#3A7BD5 100%)", minHeight: 280, display: "flex", alignItems: "center", justifyContent: "center", position: "relative", flexShrink: 0 }}>
+        <button type="button" onClick={onBack} style={{ position: "absolute", top: 20, left: 16, background: "rgba(255,255,255,0.15)", border: "none", borderRadius: "50%", width: 36, height: 36, color: "#fff", fontSize: 16, cursor: "pointer" }}>←</button>
+        <div onClick={card.photos?.length ? onOpenPhotos : undefined} style={{ cursor: card.photos?.length ? "pointer" : "default" }}>
+          <FigureImage card={card} size={120} borderRadius={20} onVideoOpen={onOpenVideo} />
+        </div>
+        <div style={{ position: "absolute", top: 20, right: 16, display: "flex", flexDirection: "column", gap: 6 }}>
+          {card.wantsTrade && <div style={{ background: "#00b894", borderRadius: 20, padding: "3px 10px", fontSize: 9, fontWeight: 800, color: "#fff" }}>TRADE</div>}
+          {card.wantsBuy && <div style={{ background: "#3A7BD5", borderRadius: 20, padding: "3px 10px", fontSize: 9, fontWeight: 800, color: "#fff" }}>BUY</div>}
+        </div>
+      </div>
+
+      <div style={{ background: "#fff", padding: 20, marginBottom: 12 }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 900, fontSize: 19, color: "#2C3E50", lineHeight: 1.2 }}>{card.name}</div>
+            <div style={{ fontSize: 12, color: "#aaa", marginTop: 3 }}>{card.brand ? `${card.brand} · ` : ""}{card.line}</div>
+          </div>
+          <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 12 }}>
+            <div style={{ fontWeight: 900, fontSize: 24, color: "#2C3E50" }}>${card.value}</div>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 10, fontWeight: 700, background: condBg(card.isNew), color: condColor(card.isNew), borderRadius: 8, padding: "3px 10px" }}>{condLabel(card.isNew)}</span>
+          {!card.isNew && card.grade && <span style={{ fontSize: 10, fontWeight: 700, background: "#EAF1FA", color: "#3A7BD5", borderRadius: 8, padding: "3px 10px" }}>{card.grade}</span>}
+        </div>
+        {card.description && <div style={{ fontSize: 13, color: "#666", lineHeight: 1.7, marginBottom: 14 }}>{card.description}</div>}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, background: "#f9f9f9", borderRadius: 14, padding: "12px 14px" }}>
+          <UserAvatar user={owner} size={40} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 800, fontSize: 13, color: "#2C3E50", display: "flex", alignItems: "center", gap: 6 }}>
+              {owner?.username} {owner?.verified && <VerifiedInHandBadge compact />}
+            </div>
+            <div style={{ fontSize: 11, color: "#aaa" }}>⭐ {owner?.rating} · {owner?.tradesCompleted || 0} trades · {owner?.location}</div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 430, background: "#fff", borderTop: "1px solid #E4EBF2", padding: "14px 20px calc(14px + env(safe-area-inset-bottom, 0px))", zIndex: 50 }}>
+        <div style={{ display: "flex", gap: 10 }}>
+          {card.wantsTrade && <button type="button" onClick={() => setSheet("trade")} style={{ flex: 1, background: "#EAF1FA", border: "2px solid #3A7BD5", borderRadius: 14, padding: "13px", fontWeight: 800, fontSize: 14, color: "#3A7BD5", cursor: "pointer" }}>⇄ Trade</button>}
+          {card.wantsBuy && <button type="button" onClick={() => { onBuy(); }} style={{ flex: 2, background: "#2C3E50", border: "none", borderRadius: 14, padding: "13px", fontWeight: 800, fontSize: 14, color: "#fff", cursor: "pointer" }}>Buy ${card.value}</button>}
+          <button type="button" onClick={() => setSheet("msg")} style={{ width: 50, background: "#EEF2F7", border: "none", borderRadius: 14, padding: "13px", fontSize: 17, cursor: "pointer" }}>💬</button>
+        </div>
+      </div>
+
+      {sheet === "trade" && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+          <div style={{ background: "#fff", borderRadius: "28px 28px 0 0", width: "100%", maxWidth: 430, maxHeight: "92vh", overflowY: "auto", padding: "24px 20px 44px" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+              <div style={{ fontWeight: 800, fontSize: 18, color: "#2C3E50" }}>
+                {tradeStep === "pick" ? "⇄ Build your offer" : tradeStep === "topup" ? "💰 Top-up" : tradeStep === "confirm" ? "Review Trade" : "🤝 Trade Proposed!"}
+              </div>
+              <button type="button" onClick={closeSheet} style={{ background: "#EEF2F7", border: "none", borderRadius: "50%", width: 32, height: 32, fontSize: 16, cursor: "pointer" }}>✕</button>
+            </div>
+            <div style={{ display: "flex", gap: 4, marginBottom: 20 }}>
+              {["pick", "topup", "confirm"].map((s, i) => (
+                <div key={s} style={{ flex: 1, height: 3, borderRadius: 2, background: ["pick", "topup", "confirm"].indexOf(tradeStep) >= i ? "#3A7BD5" : "#E4EBF2" }} />
+              ))}
+            </div>
+
+            {tradeStep === "pick" && (
+              <>
+                <div style={{ background: "#EAF1FA", borderRadius: 14, padding: "12px 14px", marginBottom: 14, display: "flex", gap: 12, alignItems: "center" }}>
+                  <FigureImage card={card} size={48} borderRadius={12} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "#3A7BD5", marginBottom: 2 }}>THEY OFFER</div>
+                    <div style={{ fontWeight: 800, fontSize: 13, color: "#2C3E50" }}>{card.name}</div>
+                    <div style={{ fontSize: 11, color: "#aaa" }}><strong style={{ color: "#2C3E50" }}>${card.value}</strong></div>
+                  </div>
+                </div>
+                <div style={{ fontWeight: 700, fontSize: 13, color: "#2C3E50", marginBottom: 2 }}>Pick figures from your vault</div>
+                <div style={{ fontSize: 11, color: "#aaa", marginBottom: 12 }}>Select one or more to build your offer</div>
+                {tradePicks.length > 0 && (
+                  <div style={{ background: "#2C3E50", borderRadius: 14, padding: "10px 14px", marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <div>
+                      <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)" }}>{tradePicks.length} figure{tradePicks.length > 1 ? "s" : ""} selected</div>
+                      <div style={{ fontWeight: 900, fontSize: 16, color: "#fff" }}>${myTotal} total</div>
+                    </div>
+                  </div>
+                )}
+                {myVault.length === 0 ? (
+                  <div style={{ fontSize: 12, color: "#888", marginBottom: 18 }}>No trade listings in your vault yet. Enable ⇄ Trade on a figure first.</div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
+                    {myVault.map((fig) => {
+                      const sel = tradePicks.some((f) => f.id === fig.id);
+                      const newTotal = sel ? tradePicks.filter((f) => f.id !== fig.id).reduce((s, f) => s + f.value, 0) : myTotal + fig.value;
+                      const diff = newTotal - card.value;
+                      return (
+                        <button key={fig.id} type="button" onClick={() => togglePick(fig)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 16, border: `2px solid ${sel ? "#3A7BD5" : "#E4EBF2"}`, background: sel ? "#EAF1FA" : "#fff", cursor: "pointer", textAlign: "left", width: "100%" }}>
+                          <FigureImage card={fig} size={44} borderRadius={12} />
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 800, fontSize: 13, color: "#2C3E50" }}>{fig.name}</div>
+                            <div style={{ fontSize: 10, color: "#aaa" }}>{fig.brand}{fig.grade ? ` · ${fig.grade}` : ""}</div>
+                            <div style={{ fontWeight: 800, fontSize: 13, color: "#2C3E50", marginTop: 2 }}>${fig.value}</div>
+                          </div>
+                          <span style={{ fontSize: 9, fontWeight: 800, padding: "3px 8px", borderRadius: 8, background: sel ? "#EAF1FA" : Math.abs(diff) < 25 ? "#f0fff8" : diff > 0 ? "#f0fff8" : "#fff8e6", color: sel ? "#3A7BD5" : Math.abs(diff) < 25 ? "#00b894" : diff > 0 ? "#00b894" : "#f0932b" }}>
+                            {sel ? "✓ Added" : Math.abs(diff) < 25 ? "≈ Even" : diff > 0 ? `+$${diff} your favour` : `-$${Math.abs(diff)}`}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                <button type="button" disabled={tradePicks.length === 0} onClick={() => setTradeStep("topup")} style={{ width: "100%", background: tradePicks.length > 0 ? "#2C3E50" : "#E4EBF2", border: "none", borderRadius: 14, padding: "14px", color: tradePicks.length > 0 ? "#fff" : "#aaa", fontWeight: 800, fontSize: 14, cursor: tradePicks.length > 0 ? "pointer" : "default" }}>
+                  {tradePicks.length > 0 ? `Continue with ${tradePicks.length} figure${tradePicks.length > 1 ? "s" : ""} →` : "Select at least one figure"}
+                </button>
+              </>
+            )}
+
+            {tradeStep === "topup" && (
+              <>
+                <div style={{ background: Math.abs(gap) < 25 ? "#f0fff8" : inMyFavour ? "#f0fff8" : "#fff8e6", borderRadius: 12, padding: "10px 14px", marginBottom: 14, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "#555" }}>Value difference</span>
+                  <span style={{ fontSize: 15, fontWeight: 900, color: Math.abs(gap) < 25 ? "#00b894" : inMyFavour ? "#00b894" : "#f0932b" }}>
+                    {Math.abs(gap) < 25 ? "≈ Even trade" : inMyFavour ? `$${Math.abs(gap)} in your favour` : `$${gap} in their favour`}
+                  </span>
+                </div>
+                <div style={{ fontWeight: 700, fontSize: 13, color: "#2C3E50", marginBottom: 4 }}>
+                  {Math.abs(gap) < 25 ? "Suggest a top-up? (optional)" : inMyFavour ? "Request a top-up from them" : "Offer a top-up to balance?"}
+                </div>
+                <div style={{ fontSize: 11, color: "#aaa", marginBottom: 12, lineHeight: 1.5 }}>They can accept, counter with a different amount, or skip. Up to 3 rounds of counters.</div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+                  {topupChips.map((amt) => (
+                    <button key={amt} type="button" onClick={() => setTopupAmount(String(amt))} style={{ background: topupAmount === String(amt) ? "#2C3E50" : "#EEF2F7", border: "none", borderRadius: 20, padding: "6px 14px", fontSize: 11, fontWeight: 700, color: topupAmount === String(amt) ? "#fff" : "#888", cursor: "pointer" }}>
+                      {amt === 0 ? "No top-up" : `$${amt}`}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ position: "relative", marginBottom: 14 }}>
+                  <span style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", fontWeight: 800, fontSize: 16, color: "#2C3E50" }}>$</span>
+                  <input value={topupAmount} onChange={(e) => setTopupAmount(e.target.value.replace(/[^0-9]/g, ""))} placeholder="Custom amount" type="number" style={{ width: "100%", borderRadius: 12, border: "1.5px solid #E4EBF2", padding: "11px 14px 11px 28px", fontSize: 16, fontWeight: 800, color: "#2C3E50", outline: "none", fontFamily: "inherit" }} />
+                </div>
+                <div style={{ display: "flex", gap: 10 }}>
+                  <button type="button" onClick={() => setTradeStep("pick")} style={{ flex: 1, background: "#EEF2F7", border: "none", borderRadius: 14, padding: "13px", fontWeight: 700, fontSize: 13, color: "#888", cursor: "pointer" }}>← Back</button>
+                  <button type="button" onClick={() => setTradeStep("confirm")} style={{ flex: 2, background: "#2C3E50", border: "none", borderRadius: 14, padding: "13px", fontWeight: 800, fontSize: 13, color: "#fff", cursor: "pointer" }}>
+                    {hasTopup ? `Continue · $${topupAmount} top-up` : "Continue →"}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {tradeStep === "confirm" && (
+              <>
+                <div style={{ background: "#f9f9f9", borderRadius: 16, padding: 14, marginBottom: 14 }}>
+                  {tradePicks.map((f) => (
+                    <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                      <FigureImage card={f} size={34} borderRadius={10} />
+                      <div style={{ flex: 1, fontWeight: 700, fontSize: 12, color: "#2C3E50" }}>{f.name}</div>
+                      <div style={{ fontWeight: 800, fontSize: 13, color: "#2C3E50" }}>${f.value}</div>
+                    </div>
+                  ))}
+                  {hasTopup && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, paddingTop: 8, borderTop: "1px solid #ebebeb" }}>
+                      <div style={{ width: 34, height: 34, borderRadius: 10, background: "#f0fff8", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>💰</div>
+                      <div style={{ flex: 1, fontWeight: 700, fontSize: 12, color: "#00b894" }}>Top-up suggestion</div>
+                      <div style={{ fontWeight: 800, fontSize: 13, color: "#00b894" }}>${topupAmount}</div>
+                    </div>
+                  )}
+                </div>
+                <div style={{ display: "flex", gap: 10 }}>
+                  <button type="button" onClick={() => setTradeStep("topup")} style={{ flex: 1, background: "#EEF2F7", border: "none", borderRadius: 14, padding: "13px", fontWeight: 700, fontSize: 13, color: "#888", cursor: "pointer" }}>← Back</button>
+                  <button type="button" onClick={() => { onSendProposal({ offeredCardIds: tradePicks.map((f) => f.id), topupSuggested: parseInt(topupAmount, 10) || 0 }); setTradeStep("done"); }} style={{ flex: 2, background: "#2C3E50", border: "none", borderRadius: 14, padding: "13px", fontWeight: 800, fontSize: 13, color: "#fff", cursor: "pointer" }}>🤝 Send Proposal</button>
+                </div>
+              </>
+            )}
+
+            {tradeStep === "done" && (
+              <div style={{ textAlign: "center", padding: "16px 0" }}>
+                <div style={{ fontSize: 64, marginBottom: 14 }}>🤝</div>
+                <div style={{ fontWeight: 900, fontSize: 20, color: "#2C3E50", marginBottom: 8 }}>Trade Proposed!</div>
+                <div style={{ fontSize: 13, color: "#888", lineHeight: 1.7, marginBottom: 20 }}>
+                  {owner?.username} has been notified.
+                  {hasTopup ? ` They can accept, counter, or skip your $${topupAmount} top-up.` : " They have 48 hours to accept or decline."}
+                </div>
+                <button type="button" onClick={closeSheet} style={{ width: "100%", background: "#2C3E50", border: "none", borderRadius: 14, padding: "14px", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer" }}>Done</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {sheet === "msg" && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+          <div style={{ background: "#fff", borderRadius: "28px 28px 0 0", width: "100%", maxWidth: 430, padding: "24px 20px 44px" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+              <div style={{ fontWeight: 800, fontSize: 18, color: "#2C3E50" }}>💬 Message Seller</div>
+              <button type="button" onClick={closeSheet} style={{ background: "#EEF2F7", border: "none", borderRadius: "50%", width: 32, height: 32, fontSize: 16, cursor: "pointer" }}>✕</button>
+            </div>
+            {!msgDone ? (
+              <>
+                <textarea value={msgText} onChange={(e) => setMsgText(e.target.value)} placeholder="Ask about condition, authenticity, shipping timeline…" rows={4} style={{ width: "100%", borderRadius: 12, border: "1.5px solid #E4EBF2", padding: 12, fontSize: 13, fontFamily: "inherit", resize: "none", lineHeight: 1.5, marginBottom: 16, outline: "none" }} />
+                <button type="button" disabled={!msgText.trim()} onClick={() => { onMessage(msgText.trim()); setMsgDone(true); }} style={{ width: "100%", background: msgText.trim() ? "#2C3E50" : "#E4EBF2", border: "none", borderRadius: 14, padding: "14px", color: msgText.trim() ? "#fff" : "#aaa", fontWeight: 800, fontSize: 14, cursor: msgText.trim() ? "pointer" : "default" }}>Send Message</button>
+              </>
+            ) : (
+              <div style={{ textAlign: "center", padding: "16px 0" }}>
+                <div style={{ fontSize: 48, marginBottom: 12 }}>📨</div>
+                <div style={{ fontWeight: 800, fontSize: 16, color: "#2C3E50", marginBottom: 8 }}>Message sent!</div>
+                <button type="button" onClick={closeSheet} style={{ width: "100%", background: "#2C3E50", border: "none", borderRadius: 14, padding: "14px", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer" }}>Done</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ─── CHECKOUT MODAL (card via Stripe Checkout — no prepaid wallet) ─────────────
 function CheckoutModal({ card, seller, onPayWithCard, onClose }) {
@@ -435,6 +686,27 @@ function CheckoutModal({ card, seller, onPayWithCard, onClose }) {
               {busy ? "Opening Stripe…" : `Pay $${fmt(grandTotal)} with card`}
             </Btn>
         </>
+      </div>
+    </div>
+  );
+}
+
+// ─── TOP-UP COUNTER MODAL ─────────────────────────────────────────────────────
+function CounterTopupModal({ proposal, onSubmit, onClose }) {
+  const [amount, setAmount] = useState(String(proposal.topupSuggested || 0));
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:650, display:"flex", alignItems:"flex-end", justifyContent:"center" }}>
+      <div style={{ background:"#fff", borderRadius:"28px 28px 0 0", padding:"24px 20px 40px", width:"100%", maxWidth:430 }}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16 }}>
+          <div style={{ fontWeight:800, fontSize:18, color:"#2C3E50" }}>Counter top-up</div>
+          <button type="button" onClick={onClose} style={{ background:"#E4EBF2", border:"none", borderRadius:"50%", width:32, height:32, fontSize:16, cursor:"pointer" }}>✕</button>
+        </div>
+        <div style={{ fontSize:12, color:"#888", marginBottom:12 }}>They suggested ${proposal.topupSuggested}. Offer a different amount (round {(proposal.topupCounterRound || 0) + 1} of 3).</div>
+        <div style={{ position:"relative", marginBottom:16 }}>
+          <span style={{ position:"absolute", left:14, top:"50%", transform:"translateY(-50%)", fontWeight:800, fontSize:16, color:"#2C3E50" }}>$</span>
+          <input value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^0-9]/g, ""))} type="number" style={{ width:"100%", borderRadius:12, border:"1.5px solid #E4EBF2", padding:"11px 14px 11px 28px", fontSize:16, fontWeight:800, outline:"none", fontFamily:"inherit" }} />
+        </div>
+        <button type="button" onClick={() => onSubmit(parseInt(amount, 10) || 0)} style={{ width:"100%", background:"#2C3E50", border:"none", borderRadius:14, padding:"14px", color:"#fff", fontWeight:800, fontSize:14, cursor:"pointer" }}>Send Counter</button>
       </div>
     </div>
   );
@@ -3303,7 +3575,7 @@ export default function InHand() {
 
 function AppShell({ onSignOut, authUser }) {
   const activeUserId = authUser?.id || DEFAULT_USER_ID;
-  const [db, setDb] = useState(() => (supabase ? EMPTY_DB : { users:SEED_USERS, cards:SEED_CARDS, transactions:SEED_TRANSACTIONS, shipments:SEED_SHIPMENTS, disputes:SEED_DISPUTES, ratings:SEED_RATINGS, messages:SEED_MESSAGES, notifications:SEED_NOTIFICATIONS }));
+  const [db, setDb] = useState(() => (supabase ? EMPTY_DB : { users:SEED_USERS, cards:SEED_CARDS, transactions:SEED_TRANSACTIONS, shipments:SEED_SHIPMENTS, disputes:SEED_DISPUTES, ratings:SEED_RATINGS, messages:SEED_MESSAGES, notifications:SEED_NOTIFICATIONS, tradeProposals: [] }));
   const dbRef = useRef(db);
   useEffect(() => {
     dbRef.current = db;
@@ -3313,7 +3585,7 @@ function AppShell({ onSignOut, authUser }) {
   useEffect(() => {
     const onNavigate = (e) => {
       const next = e?.detail?.tab;
-      if (next && NAV_ITEMS.some(([id]) => id === next)) setTab(next);
+      if (next && ALL_NAV_TABS.has(next)) setTab(next);
     };
     window.addEventListener("inhand:navigate", onNavigate);
     return () => window.removeEventListener("inhand:navigate", onNavigate);
@@ -3324,14 +3596,12 @@ function AppShell({ onSignOut, authUser }) {
   const [brandFilter, setBrandFilter] = useState("All");
   const [typeFilter, setTypeFilter] = useState("all");
   const [sortBy, setSortBy] = useState("match");
-  const [swipeCards, setSwipeCards] = useState([]);
-  const [liked, setLiked] = useState([]);
+  const [detailListing, setDetailListing] = useState(null);
+  const [counterTopupFor, setCounterTopupFor] = useState(null);
   const [toast, setToast] = useState(null);
-  const [selectedOffer, setSelectedOffer] = useState(null);
   const [showAddCard, setShowAddCard] = useState(false);
   const [showAddUser, setShowAddUser] = useState(false);
   const [checkoutCard, setCheckoutCard] = useState(null);
-  const [sweetenerTrade, setSweetenerTrade] = useState(null);
   const [trackingModal, setTrackingModal] = useState(null);
   const [addTrackingFor, setAddTrackingFor] = useState(null);
   const [marketModal, setMarketModal] = useState(null);
@@ -3356,7 +3626,7 @@ function AppShell({ onSignOut, authUser }) {
   const ratingsSectionRef = useRef(null);
   const [showPackagingGuide, setShowPackagingGuide] = useState(false);
   const [vaultFilter, setVaultFilter] = useState("all");
-  const [tradesView, setTradesView] = useState("proposed");
+  const [tradesView, setTradesView] = useState("proposals");
 
   const myNotifications = (db.notifications||[]);
   const unreadNotifCount = myNotifications.filter(n=>!n.read).length;
@@ -3453,6 +3723,7 @@ function AppShell({ onSignOut, authUser }) {
             ratings: fromCloud.ratings || [],
             messages: fromCloud.messages || [],
             notifications: fromCloud.notifications || [],
+            tradeProposals: fromCloud.tradeProposals || [],
           });
         } catch (e) {
           console.error("In Hand: Supabase load failed (check RLS policies and seed).", e);
@@ -3463,7 +3734,10 @@ function AppShell({ onSignOut, authUser }) {
       } else {
         try {
           const r = await window.storage.get("inhand-db-v2");
-          if (r) setDb(JSON.parse(r.value));
+          if (r) {
+            const parsed = JSON.parse(r.value);
+            setDb({ ...EMPTY_DB, ...parsed, tradeProposals: parsed.tradeProposals || [] });
+          }
         } catch {}
       }
       if (!cancelled) setDbLoaded(true);
@@ -3492,6 +3766,7 @@ function AppShell({ onSignOut, authUser }) {
           ratings: fromCloud.ratings || [],
           messages: fromCloud.messages || [],
           notifications: fromCloud.notifications || [],
+          tradeProposals: fromCloud.tradeProposals || dbRef.current?.tradeProposals || [],
         });
         notify("✅ Payment complete — your order is synced.");
       } catch (e) {
@@ -3518,7 +3793,10 @@ function AppShell({ onSignOut, authUser }) {
   const myTradeable = myCards.filter(c=>c.wantsTrade);
   const otherCards = db.cards.filter(c=>c.ownerId!==activeUserId);
   const myTxns = db.transactions.filter(t=>t.buyerId===activeUserId||t.sellerId===activeUserId);
-  const myTradeTxns = myTxns.filter(t => t.type === "trade" || t.type === "sweetener");
+  const myTradeProposals = (db.tradeProposals || []).filter(
+    (p) => p.proposerId === activeUserId || p.receiverId === activeUserId
+  );
+  const myPurchases = db.transactions.filter((t) => t.buyerId === activeUserId && t.type === "purchase");
   const vaultFiltered = myCards.filter((c) => {
     if (vaultFilter === "trade") return c.wantsTrade;
     if (vaultFilter === "sale") return c.wantsBuy;
@@ -3535,7 +3813,6 @@ function AppShell({ onSignOut, authUser }) {
     setVaultVideoDraft(fig?.videoUrl || "");
   }, [editingPhotos, db.cards, activeUserId]);
 
-  useEffect(() => { if(myTradeable.length&&!selectedOffer) setSelectedOffer(myTradeable[0]); }, [myTradeable.length]);
   const notify = msg => { setToast(stripToastEmoji(msg)); setTimeout(()=>setToast(null),2500); };
 
   const openListingById = (listingId) => {
@@ -3545,8 +3822,8 @@ function AppShell({ onSignOut, authUser }) {
       return;
     }
     setTab("browse");
-    if (card.wantsBuy) setCheckoutCard(card);
-    else setMarketModal(card);
+    const enrichedCard = { ...card, owner: getUser(card.ownerId), matchScore: computeMatch(myCards, card, myUser?.wishlist || []) };
+    setDetailListing(enrichedCard);
   };
 
   useEffect(() => {
@@ -3724,6 +4001,7 @@ function AppShell({ onSignOut, authUser }) {
         ratings: fromCloud.ratings || [],
         messages: fromCloud.messages || [],
         notifications: fromCloud.notifications || [],
+        tradeProposals: fromCloud.tradeProposals || [],
       });
       notify("🔄 Reloaded from Supabase");
     } catch (e) {
@@ -3741,8 +4019,180 @@ function AppShell({ onSignOut, authUser }) {
       && (typeFilter==="all"||(typeFilter==="trade"&&c.wantsTrade)||(typeFilter==="buy"&&c.wantsBuy));
   }).sort((a,b)=>sortBy==="match"?b.matchScore-a.matchScore:b.value-a.value);
 
-  const handleSwipe = (dir,cardId) => { const c=enriched.find(x=>x.id===cardId); if(dir==="yes"&&c){setLiked(l=>[...l,c]);notify("🤝 Trade proposed!");} setSwipeCards(p=>p.filter(id=>id!==cardId)); };
-  const launchSwipe = list => { setSwipeCards(list.map(c=>c.id).reverse()); setTab("swipe"); };
+  const handleSendTradeProposal = async ({ targetCard, offeredCardIds, topupSuggested }) => {
+    const proposal = {
+      id: "tp" + Date.now(),
+      proposerId: activeUserId,
+      receiverId: targetCard.ownerId,
+      targetCardId: targetCard.id,
+      offeredCardIds,
+      topupSuggested: topupSuggested || 0,
+      topupAgreed: 0,
+      topupCounterRound: 0,
+      topupStatus: topupSuggested > 0 ? "pending" : "none",
+      lastTopupBy: topupSuggested > 0 ? activeUserId : null,
+      status: "pending",
+      createdAt: new Date().toISOString(),
+    };
+    if (supabase) {
+      const { error } = await insertTradeProposal(proposal);
+      if (error) {
+        console.error("In Hand: trade proposal insert failed", error);
+        notify("❌ Could not save trade proposal");
+        return;
+      }
+      const nid = "n" + Date.now();
+      await insertNotification({
+        id: nid,
+        recipientId: targetCard.ownerId,
+        type: "trade_proposed",
+        read: false,
+        title: "New trade proposal",
+        body: `${myUser?.username} wants to trade for ${targetCard.name}`,
+        cardId: targetCard.id,
+        link: "trades",
+        relatedUserId: activeUserId,
+      });
+    }
+    setDb((d) => ({
+      ...d,
+      tradeProposals: [proposal, ...(d.tradeProposals || [])],
+    }));
+    notify("🤝 Trade proposal sent!");
+    setTab("trades");
+    setTradesView("proposals");
+  };
+
+  const executeTradeSwap = async (proposal) => {
+    const targetCard = db.cards.find((c) => c.id === proposal.targetCardId);
+    const offeredCards = proposal.offeredCardIds.map((id) => db.cards.find((c) => c.id === id)).filter(Boolean);
+    if (!targetCard || offeredCards.length === 0) {
+      notify("❌ Trade figures no longer available");
+      return false;
+    }
+    const topup = proposal.topupAgreed || proposal.topupSuggested || 0;
+    const proposerTotal = offeredCards.reduce((s, c) => s + c.value, 0);
+    const iOwe = targetCard.value > proposerTotal;
+    const topupFee = topup > 0 ? parseFloat((topup * PLATFORM_FEE).toFixed(2)) : 0;
+    const txns = [];
+    if (topup > 0 && iOwe) {
+      txns.push({ id: "t" + Date.now() + "u", type: "topup", buyerId: proposal.proposerId, sellerId: proposal.receiverId, cardId: targetCard.id, amount: topup, fee: topupFee, net: topup - topupFee, status: "in_escrow", method: "escrow", date: new Date().toISOString().split("T")[0], cardName: `Top-up: ${offeredCards.map((c) => c.name).join(" + ")} ⇄ ${targetCard.name}` });
+    }
+    const offerLabel = offeredCards.map((c) => c.name).join(" + ");
+    txns.push({ id: "t" + Date.now() + "t", type: "trade", buyerId: proposal.proposerId, sellerId: proposal.receiverId, cardId: targetCard.id, amount: 0, fee: TRADE_FEE, net: 0, status: "completed", method: "trade", date: new Date().toISOString().split("T")[0], cardName: `Trade: ${offerLabel} ⇄ ${targetCard.name}` });
+
+    if (supabase) {
+      const { data: swapResult, error: swapErr } = await executeTradeProposal(proposal.id);
+      if (swapErr) {
+        console.error("In Hand: execute_trade_proposal failed", swapErr);
+        notify("❌ Trade failed: could not swap figures in Supabase");
+        return false;
+      }
+      if (swapResult && swapResult.ok === false) {
+        console.error("In Hand: execute_trade_proposal rejected", swapResult);
+        notify(`❌ Trade failed: ${swapResult.error || "swap rejected"}`);
+        return false;
+      }
+      for (const t of txns) {
+        const { error: txnErr } = await upsertTransaction(t);
+        if (txnErr) {
+          console.error("In Hand: trade transaction write failed", txnErr);
+          notify("⚠️ Figures swapped; transaction log may be incomplete");
+          break;
+        }
+      }
+    }
+
+    setDb((d) => {
+      const newCards = d.cards.map((c) => {
+        if (c.id === targetCard.id) return { ...c, ownerId: proposal.proposerId, wantsTrade: false, wantsBuy: false };
+        if (proposal.offeredCardIds.includes(c.id)) return { ...c, ownerId: proposal.receiverId, wantsTrade: false, wantsBuy: false };
+        return c;
+      });
+      const newUsers = d.users.map((u) => {
+        if (u.id === proposal.proposerId) return { ...u, walletBalance: parseFloat((u.walletBalance - TRADE_FEE).toFixed(2)) };
+        if (u.id === proposal.receiverId) return { ...u, walletBalance: parseFloat((u.walletBalance - TRADE_FEE).toFixed(2)) };
+        return u;
+      });
+      return {
+        ...d,
+        users: newUsers,
+        cards: newCards,
+        transactions: [...txns, ...d.transactions],
+        tradeProposals: (d.tradeProposals || []).map((p) => (p.id === proposal.id ? { ...p, status: "completed", topupAgreed: topup, topupStatus: topup > 0 ? "accepted" : p.topupStatus } : p)),
+      };
+    });
+    return true;
+  };
+
+  const handleAcceptTradeProposal = async (proposal) => {
+    const agreed = { ...proposal, topupAgreed: proposal.topupSuggested, topupStatus: proposal.topupSuggested > 0 ? "accepted" : proposal.topupStatus };
+    const ok = await executeTradeSwap(agreed);
+    if (ok) notify("🤝 Trade accepted!");
+  };
+
+  const handleDeclineTradeProposal = async (proposalId) => {
+    if (supabase) {
+      const { error } = await updateTradeProposal(proposalId, { status: "declined", topupStatus: "declined" });
+      if (error) console.error("In Hand: decline trade proposal failed", error);
+    }
+    setDb((d) => ({
+      ...d,
+      tradeProposals: (d.tradeProposals || []).map((p) => (p.id === proposalId ? { ...p, status: "declined", topupStatus: p.topupSuggested > 0 ? "declined" : p.topupStatus } : p)),
+    }));
+    notify("Trade declined");
+  };
+
+  const handleWithdrawTradeProposal = async (proposalId) => {
+    if (supabase) {
+      const { error } = await updateTradeProposal(proposalId, { status: "withdrawn" });
+      if (error) console.error("In Hand: withdraw trade proposal failed", error);
+    }
+    setDb((d) => ({
+      ...d,
+      tradeProposals: (d.tradeProposals || []).map((p) => (p.id === proposalId ? { ...p, status: "withdrawn" } : p)),
+    }));
+    notify("Proposal withdrawn");
+  };
+
+  const handleCounterTopup = async (proposalId, amount) => {
+    const existing = (db.tradeProposals || []).find((p) => p.id === proposalId);
+    const nextRound = (existing?.topupCounterRound || 0) + 1;
+    if (nextRound > 3) {
+      notify("Maximum counter rounds reached");
+      return;
+    }
+    if (supabase) {
+      const { error } = await updateTradeProposal(proposalId, {
+        topupSuggested: amount,
+        topupStatus: "countered",
+        topupCounterRound: nextRound,
+        lastTopupBy: activeUserId,
+      });
+      if (error) {
+        console.error("In Hand: counter top-up failed", error);
+        notify("❌ Could not send counter offer");
+        return;
+      }
+    }
+    setDb((d) => ({
+      ...d,
+      tradeProposals: (d.tradeProposals || []).map((p) => {
+        if (p.id !== proposalId) return p;
+        return {
+          ...p,
+          topupSuggested: amount,
+          topupStatus: "countered",
+          topupCounterRound: nextRound,
+          lastTopupBy: activeUserId,
+        };
+      }),
+    }));
+    setCounterTopupFor(null);
+    notify("Counter offer sent");
+  };
+
+  const openListingDetail = (card) => setDetailListing(card);
 
   const handleAddUser = async (user) => {
     if (supabase) {
@@ -4042,69 +4492,6 @@ function AppShell({ onSignOut, authUser }) {
     return () => clearInterval(interval);
   }, [dbLoaded]);
 
-  const handleSweetenerConfirm = async ({ sweetener, fee, total, payMethod }) => {
-    if (!sweetenerTrade) return;
-    const { theirCard, myFigure } = sweetenerTrade;
-    const iOwe = theirCard.value > myFigure.value;
-    const sweetenerFee = sweetener > 0 ? parseFloat((sweetener * PLATFORM_FEE).toFixed(2)) : 0;
-    const txns = [];
-    // Log sweetener payment if there's a difference
-    if (sweetener > 0 && iOwe) {
-      txns.push({ id:"t"+Date.now()+"s", type:"sweetener", buyerId:activeUserId, sellerId:theirCard.ownerId, cardId:theirCard.id, amount:sweetener, fee, net:sweetener-fee, status:"completed", method:payMethod, date:new Date().toISOString().split("T")[0], cardName:`Sweetener: ${myFigure.name} ⇄ ${theirCard.name}` });
-    }
-    // Log the trade itself with $2 fee per party
-    txns.push({ id:"t"+Date.now()+"t", type:"trade", buyerId:activeUserId, sellerId:theirCard.ownerId, cardId:theirCard.id, amount:0, fee:TRADE_FEE, net:0, status:"completed", method:"trade", date:new Date().toISOString().split("T")[0], cardName:`Trade: ${myFigure.name} ⇄ ${theirCard.name}` });
-    if (supabase) {
-      for (const t of txns) {
-        const { error: txnErr } = await upsertTransaction(t);
-        if (txnErr) {
-          console.error("In Hand: trade transaction write failed", txnErr);
-          notify("❌ Trade failed: could not save transaction");
-          return;
-        }
-      }
-      const { error } = await swapTradeListings(theirCard.id, myFigure.id);
-      if (error) {
-        console.error("In Hand: trade ownership transfer failed", error);
-        notify("❌ Trade failed: could not swap figures in Supabase");
-        return;
-      }
-      let nextSelfWallet = null;
-      if (myUser) {
-        if (iOwe && payMethod === "wallet") nextSelfWallet = parseFloat((myUser.walletBalance - total).toFixed(2));
-        else if (!iOwe) nextSelfWallet = parseFloat((myUser.walletBalance - TRADE_FEE).toFixed(2));
-      }
-      if (nextSelfWallet != null) {
-        const { error: wErr } = await updateOwnUser(activeUserId, { walletBalance: nextSelfWallet });
-        if (wErr) {
-          console.error("In Hand: trade wallet update failed", wErr);
-          notify("⚠️ Trade saved; your wallet in Supabase may be out of sync — refresh");
-        }
-      }
-    }
-
-    setDb(d => {
-      const newUsers = d.users.map(u => {
-        // Deduct sweetener from buyer's wallet if wallet used
-        if(u.id===activeUserId && iOwe && payMethod==="wallet") return {...u, walletBalance:parseFloat((u.walletBalance-total).toFixed(2))};
-        // Deduct $2 trade fee from both parties
-        if(u.id===activeUserId && !iOwe) return {...u, walletBalance:parseFloat((u.walletBalance-TRADE_FEE).toFixed(2))};
-        // Credit seller net sweetener minus their $2 fee
-        if(u.id===theirCard.ownerId && iOwe) return {...u, walletBalance:parseFloat((u.walletBalance+(sweetener-sweetenerFee-TRADE_FEE)).toFixed(2))};
-        if(u.id===theirCard.ownerId && !iOwe) return {...u, walletBalance:parseFloat((u.walletBalance-TRADE_FEE).toFixed(2))};
-        return u;
-      });
-      // Swap ownership of both figures
-      const newCards = d.cards.map(c => {
-        if(c.id===theirCard.id) return {...c, ownerId:activeUserId, wantsTrade:false, wantsBuy:false};
-        if(c.id===myFigure.id) return {...c, ownerId:theirCard.ownerId, wantsTrade:false, wantsBuy:false};
-        return c;
-      });
-      return { ...d, users:newUsers, cards:newCards, transactions:[...txns,...d.transactions] };
-    });
-    setSweetenerTrade(null);
-    setLiked(l => l.filter(c => c.id !== theirCard.id));
-  };
 
   // ── MESSAGING ──
   const myThreads = (db.messages||[]).filter(th => th.participants.includes(activeUserId));
@@ -4305,12 +4692,15 @@ function AppShell({ onSignOut, authUser }) {
     notify("⭐ Rating submitted — thanks!");
   };
 
-  const visibleSwipeData = swipeCards.slice(-4).map(id=>enriched.find(c=>c.id===id)).filter(Boolean).reverse();
-
   const goToTab = (id) => {
     setTab(id);
+    setDetailListing(null);
     if (id !== "messages") setActiveThread(null);
   };
+
+  const pendingIncoming = myTradeProposals.filter((p) => p.status === "pending" && p.receiverId === activeUserId).length;
+  const pendingSent = myTradeProposals.filter((p) => p.status === "pending" && p.proposerId === activeUserId).length;
+  const completedTrades = myTradeProposals.filter((p) => p.status === "completed").length;
 
   const txnColor = t => t.type==="purchase"?"#ff6b6b":(t.type==="sale"||t.type==="topup")?"#00b894":"#3A7BD5";
   const txnSign  = t => t.buyerId===activeUserId?"-":"+";
@@ -4327,7 +4717,6 @@ function AppShell({ onSignOut, authUser }) {
       {showAddCard && <AddCardModal ownerId={activeUserId} onSave={handleAddCard} onClose={()=>setShowAddCard(false)} />}
       {showAddUser && <AddUserModal onSave={handleAddUser} onClose={()=>setShowAddUser(false)} />}
       {checkoutCard && <CheckoutModal card={checkoutCard} seller={getUser(checkoutCard.ownerId)} onPayWithCard={()=>handlePurchaseWithCard(checkoutCard)} onClose={()=>setCheckoutCard(null)} />}
-      {sweetenerTrade && <TradeSweetenerModal myFigure={sweetenerTrade.myFigure} theirFigure={sweetenerTrade.theirCard} theirOwner={getUser(sweetenerTrade.theirCard.ownerId)} myUser={myUser} onConfirm={handleSweetenerConfirm} onClose={()=>setSweetenerTrade(null)} />}
       {marketModal && <MarketValueModal card={marketModal} onClose={()=>setMarketModal(null)} />}
       {showAddressModal && <AddressModal addresses={myUser?.addresses||[]} onSave={handleSaveAddresses} onClose={()=>setShowAddressModal(false)} />}
       {showEditProfile && (
@@ -4472,7 +4861,13 @@ function AppShell({ onSignOut, authUser }) {
           <div className="inhand-brand-subtitle">Collector marketplace</div>
         </div>
         <nav className="inhand-sidebar-nav">
-          {NAV_ITEMS.map(([id, label]) => (
+          {TOP_NAV_ITEMS.map(([id, label]) => (
+            <button key={id} type="button" data-active={tab === id ? "true" : "false"} onClick={() => goToTab(id)}>
+              {label}
+            </button>
+          ))}
+          <div style={{ height: 1, background: "var(--ih-border)", margin: "8px 0" }} />
+          {BOTTOM_NAV_ITEMS.map(([id, label]) => (
             <button key={id} type="button" data-active={tab === id ? "true" : "false"} onClick={() => goToTab(id)}>
               {label}
             </button>
@@ -4481,7 +4876,7 @@ function AppShell({ onSignOut, authUser }) {
       </aside>
 
       <div className="inhand-app-body">
-      {!(tab === "messages" && activeThread) && (
+      {!(tab === "messages" && activeThread) && !detailListing && (
       <header className="inhand-header">
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
           <div className="inhand-brand-lockup">
@@ -4494,9 +4889,9 @@ function AppShell({ onSignOut, authUser }) {
             </div>
           </div>
           <div className="inhand-header-actions">
-            {liked.length>0 && (
-              <button type="button" onClick={()=>setTab("trades")} className="inhand-pill" style={{ background:"#1f4f82", color:"#fff" }}>
-                {liked.length} pending
+            {pendingIncoming > 0 && (
+              <button type="button" onClick={()=>{ setTab("trades"); setTradesView("proposals"); }} className="inhand-pill" style={{ background:"#1f4f82", color:"#fff" }}>
+                {pendingIncoming} incoming
               </button>
             )}
             <button type="button" onClick={() => setShowNotifications(true)} className="inhand-icon-button" aria-label="Notifications">
@@ -4509,7 +4904,7 @@ function AppShell({ onSignOut, authUser }) {
           </div>
         </div>
         <div className="inhand-segmented">
-          {NAV_ITEMS.map(([id, label]) => (
+          {TOP_NAV_ITEMS.map(([id, label]) => (
             <button key={id} type="button" data-active={tab === id ? "true" : "false"} onClick={() => goToTab(id)}>
               {label}
             </button>
@@ -4518,6 +4913,23 @@ function AppShell({ onSignOut, authUser }) {
       </header>
       )}
 
+      {detailListing ? (
+        <ListingDetailView
+          card={detailListing}
+          owner={detailListing.owner || getUser(detailListing.ownerId)}
+          myVault={myTradeable}
+          onBack={() => setDetailListing(null)}
+          onSendProposal={({ offeredCardIds, topupSuggested }) => {
+            handleSendTradeProposal({ targetCard: detailListing, offeredCardIds, topupSuggested });
+            setDetailListing(null);
+          }}
+          onBuy={() => setCheckoutCard(detailListing)}
+          onMessage={() => openThread(detailListing.ownerId, detailListing)}
+          onOpenPhotos={() => detailListing.photos?.length && setPhotoViewer({ photos: detailListing.photos, startIdx: 0 })}
+          onOpenVideo={() => { const e = getListingVideoEmbed(detailListing.videoUrl); if (e) setListingVideoModal(e); }}
+        />
+      ) : (
+      <>
       {/* ── BROWSE ── */}
       {tab==="browse" && (
         <main className="inhand-main">
@@ -4554,7 +4966,6 @@ function AppShell({ onSignOut, authUser }) {
           </div>
           <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12 }}>
             <div style={{ fontSize:12,color:"#bbb",fontWeight:600 }}>{filtered.length} listings</div>
-            {filtered.length>0&&<button type="button" onClick={() => launchSwipe(filtered)} className="inhand-pill" style={{ background:"#1f4f82", color:"#fff" }}>Review {filtered.length}</button>}
           </div>
           {filtered.length === 0 && (
             <div className="inhand-empty">
@@ -4567,7 +4978,7 @@ function AppShell({ onSignOut, authUser }) {
             ? filtered.map(card => {
                 const {from,light}=lc(card.line); const sc=card.matchScore>=85?"#00b894":card.matchScore>=70?"#f9ca24":"#4A90D9";
                 return (
-                  <div key={card.id} className="inhand-listing-card">
+                  <div key={card.id} className="inhand-listing-card" onClick={() => openListingDetail(card)} style={{ cursor: "pointer" }}>
                     <div style={{ display:"flex",gap:12,alignItems:"center" }}>
                       <FigureImage
                         card={card}
@@ -4606,10 +5017,10 @@ function AppShell({ onSignOut, authUser }) {
                       {card.owner?.verified && <VerifiedInHandBadge compact />}
                       <span style={{ fontSize:10,color:"#8a97a6" }}>Rating {card.owner?.rating}</span>
                       <div style={{ marginLeft:"auto",display:"flex",gap:6 }}>
-                        <button type="button" onClick={() => setMarketModal(card)} className="inhand-text-button">Market</button>
-                        <button type="button" onClick={() => setShareCard(card)} className="inhand-text-button">Share</button>
+                        <button type="button" onClick={(e) => { e.stopPropagation(); setMarketModal(card); }} className="inhand-text-button">Market</button>
+                        <button type="button" onClick={(e) => { e.stopPropagation(); setShareCard(card); }} className="inhand-text-button">Share</button>
                         {card.wantsTrade && <button type="button" onClick={() => openThread(card.owner?.id || card.ownerId, card)} className="inhand-text-button">Message</button>}
-                        {card.wantsBuy&&<button onClick={()=>setCheckoutCard(card)} style={{ background:"#2C3E50",border:"none",borderRadius:10,padding:"6px 14px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer" }}>Buy ${card.value}</button>}
+                        {card.wantsBuy&&<button type="button" onClick={(e)=>{ e.stopPropagation(); setCheckoutCard(card); }} style={{ background:"#2C3E50",border:"none",borderRadius:10,padding:"6px 14px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer" }}>Buy ${card.value}</button>}
                       </div>
                     </div>
                   </div>
@@ -4619,7 +5030,7 @@ function AppShell({ onSignOut, authUser }) {
                 {filtered.map(card=>{
                   const {from,light}=lc(card.line); const sc=card.matchScore>=85?"#00b894":card.matchScore>=70?"#f9ca24":"#4A90D9";
                   return (
-                    <div key={card.id} onClick={()=>launchSwipe([card])} style={{ background:"#fff",borderRadius:18,overflow:"hidden",boxShadow:"0 2px 12px rgba(0,0,0,0.06)",border:"1px solid #E4EBF2",cursor:"pointer" }}>
+                    <div key={card.id} onClick={() => openListingDetail(card)} style={{ background:"#fff",borderRadius:18,overflow:"hidden",boxShadow:"0 2px 12px rgba(0,0,0,0.06)",border:"1px solid #E4EBF2",cursor:"pointer" }}>
                       <div style={{ background:light, height:130, position:"relative", overflow:"hidden" }}>
                         {card.photos?.length>0
                           ? <img src={card.photos[0]} alt={card.name} onClick={()=>setPhotoViewer({photos:card.photos,startIdx:0})} style={{ width:"100%", height:"100%", objectFit:"cover", cursor:"pointer" }} />
@@ -4794,7 +5205,7 @@ function AppShell({ onSignOut, authUser }) {
             <div style={{ fontWeight:800,color:"#00b894",marginBottom:6 }}>How your wallet works</div>
             <div style={{ marginBottom:6 }}>• <strong>Buy figures:</strong> pay with card at checkout (Stripe).</div>
             <div style={{ marginBottom:6 }}>• <strong>Get paid:</strong> after delivery, escrow releases to this balance.</div>
-            <div>• <strong>Trade sweeteners:</strong> you can spend earnings here if you have enough.</div>
+            <div>• <strong>Trade top-ups:</strong> optional cash to balance uneven swaps (held in escrow).</div>
             <div style={{ marginTop:10,fontSize:11,color:"#888" }}>Bank payout (withdraw) — coming soon.</div>
           </div>
 
@@ -4875,163 +5286,181 @@ function AppShell({ onSignOut, authUser }) {
         </div>
       )}
 
-      {/* ── SWIPE (review mode — only when launched from Browse) ── */}
-      {tab==="swipe" && (
-        <div style={{ flex:1,display:"flex",flexDirection:"column" }}>
-          <div style={{ padding:"14px 20px 0" }}>
-            <div style={{ fontWeight:800,fontSize:18,color:"#2C3E50",marginBottom:4 }}>Review listings</div>
-            <div style={{ fontSize:12,color:"#bbb",marginBottom:10 }}>Swipe to propose trades — offers go to the Trades tab</div>
-            <div style={{ fontSize:10,fontWeight:700,color:"#ccc",letterSpacing:1,marginBottom:8 }}>YOUR OFFER</div>
-            <div style={{ display:"flex",gap:7,overflowX:"auto",paddingBottom:4 }}>
-              {myTradeable.length === 0 ? (
-                <div style={{ fontSize:12,color:"#aaa",padding:"8px 0" }}>List a figure for trade in <button type="button" onClick={()=>setTab("vault")} style={{ background:"none",border:"none",color:"#3A7BD5",fontWeight:700,cursor:"pointer",padding:0 }}>Vault</button></div>
-              ) : myTradeable.map(fig=><div key={fig.id} onClick={()=>setSelectedOffer(fig)} style={{ flexShrink:0,background:selectedOffer?.id===fig.id?"#2C3E50":"#fff",borderRadius:14,padding:"7px 12px",cursor:"pointer",display:"flex",alignItems:"center",gap:7,border:"1.5px solid",transition:"all 0.15s",borderColor:selectedOffer?.id===fig.id?"#2C3E50":"#DCE6F0" }}><span style={{ fontSize:18 }}>{fig.image}</span><div><div style={{ fontSize:10,fontWeight:800,color:selectedOffer?.id===fig.id?"#fff":"#2C3E50",maxWidth:80,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis" }}>{fig.name}</div><div style={{ fontSize:9,color:selectedOffer?.id===fig.id?"rgba(255,255,255,0.6)":"#bbb" }}>${fig.value}</div></div></div>)}
-            </div>
-          </div>
-          <div style={{ flex:1,padding:"18px 20px 0" }}>
-            {swipeCards.length===0?(
-              <div style={{ textAlign:"center",padding:"80px 20px" }}><div style={{ fontSize:52,marginBottom:14 }}>🎉</div><div style={{ fontWeight:800,fontSize:18,color:"#2C3E50",marginBottom:6 }}>All swiped!</div><button onClick={()=>setTab("browse")} style={{ background:"#2C3E50",border:"none",borderRadius:14,padding:"10px 24px",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",marginTop:8 }}>Back to Browse</button></div>
-            ):(
-              <div style={{ position:"relative",height:510 }}>
-                {visibleSwipeData.map((card,i)=><SwipeCard key={card.id} card={card} owner={card.owner} matchScore={card.matchScore} onSwipe={dir=>handleSwipe(dir,card.id)} isTop={i===visibleSwipeData.length-1} stackIndex={visibleSwipeData.length-1-i} onOpenVideo={() => { const e = getListingVideoEmbed(card.videoUrl); if (e) setListingVideoModal(e); }} />)}
-              </div>
-            )}
-          </div>
-          {swipeCards.length>0&&(
-            <div style={{ padding:"10px 20px 18px",display:"flex",alignItems:"center",justifyContent:"center",gap:14 }}>
-              <button onClick={()=>setTab("browse")} style={{ width:44,height:44,borderRadius:"50%",background:"#fff",border:"1.5px solid #eee",fontSize:16,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 2px 10px rgba(0,0,0,0.07)" }}>☰</button>
-              <button onClick={()=>swipeCards.length&&handleSwipe("no",swipeCards[0])} style={{ width:62,height:62,borderRadius:"50%",background:"#fff",border:"2px solid #4A90D9",fontSize:24,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 4px 18px rgba(253,121,168,0.25)" }}>✕</button>
-              <button onClick={()=>swipeCards.length&&handleSwipe("yes",swipeCards[0])} style={{ width:70,height:70,borderRadius:"50%",background:"linear-gradient(135deg,#00b894,#55efc4)",border:"none",fontSize:28,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 6px 22px rgba(0,184,148,0.4)" }}>🤝</button>
-              <button onClick={()=>notify("⭐ Saved!")} style={{ width:44,height:44,borderRadius:"50%",background:"#fff",border:"1.5px solid #eee",fontSize:16,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 2px 10px rgba(0,0,0,0.07)" }}>⭐</button>
-            </div>
-          )}
-          <div style={{ padding:"0 20px 14px" }}>
-            <div style={{ height:3,background:"#DCE6F0",borderRadius:4,overflow:"hidden" }}><div style={{ height:"100%",background:"linear-gradient(90deg,#4A90D9,#00b894)",borderRadius:4,width:`${((otherCards.length-swipeCards.length)/Math.max(otherCards.length,1))*100}%`,transition:"width 0.3s" }} /></div>
-            <div style={{ textAlign:"center",fontSize:10,color:"#ccc",fontWeight:700,marginTop:5 }}>{otherCards.length-swipeCards.length} of {otherCards.length} viewed</div>
-          </div>
-        </div>
-      )}
-
       {/* ── TRADES ── */}
       {tab==="trades" && (
-        <div className="inhand-page" style={{ flex:1,overflowY:"auto",padding:"20px 20px 80px" }}>
-          <div style={{ fontWeight:800,fontSize:18,color:"#2C3E50",marginBottom:4 }}>🤝 Trades</div>
-          <div style={{ fontSize:12,color:"#888",marginBottom:16,lineHeight:1.5 }}>Manage swap proposals and trade history. Your collection lives in <strong>Vault</strong>; profile &amp; settings are under <strong>Account</strong>.</div>
-
-          <div style={{ display:"flex",background:"#DCE6F0",borderRadius:12,padding:4,gap:2,marginBottom:16 }}>
-            {[["proposed","Proposed"],["history","History"]].map(([id,label])=>(
-              <button key={id} type="button" onClick={()=>setTradesView(id)} style={{ flex:1,background:tradesView===id?"#fff":"transparent",border:"none",borderRadius:8,padding:"8px 4px",fontSize:11,fontWeight:tradesView===id?800:600,color:tradesView===id?"#2C3E50":"#aaa",cursor:"pointer" }}>{label}</button>
+        <div className="inhand-page" style={{ flex:1,overflowY:"auto",padding:"20px 20px 100px" }}>
+          <div style={{ display:"flex",background:"#fff",borderRadius:16,padding:5,gap:4,marginBottom:20,boxShadow:"0 2px 8px rgba(0,0,0,0.05)" }}>
+            {[["proposals","🤝 Trades"],["purchases","📦 Purchases"]].map(([id,label])=>(
+              <button key={id} type="button" onClick={()=>setTradesView(id)} style={{ flex:1,background:tradesView===id?"#2C3E50":"transparent",border:"none",borderRadius:12,padding:"11px",fontSize:12,fontWeight:800,color:tradesView===id?"#fff":"#aaa",cursor:"pointer" }}>{label}</button>
             ))}
           </div>
 
-          {tradesView === "proposed" && (
+          {tradesView === "proposals" && (
             <>
-              <div style={{ background:"#fff",borderRadius:16,padding:"14px 16px",border:"1px solid #E4EBF2",marginBottom:16 }}>
-                <div style={{ fontSize:10,fontWeight:700,color:"#bbb",letterSpacing:1,marginBottom:8 }}>FIGURE YOU&apos;RE OFFERING</div>
-                {myTradeable.length === 0 ? (
-                  <div style={{ fontSize:12,color:"#888" }}>No trade listings yet. Open <button type="button" onClick={()=>setTab("vault")} style={{ background:"none",border:"none",color:"#3A7BD5",fontWeight:700,cursor:"pointer",padding:0 }}>Vault</button> and enable ⇄ Trade on a figure.</div>
-                ) : (
-                  <div style={{ display:"flex",gap:7,overflowX:"auto" }}>
-                    {myTradeable.map(fig=><div key={fig.id} onClick={()=>setSelectedOffer(fig)} style={{ flexShrink:0,background:selectedOffer?.id===fig.id?"#2C3E50":"#EEF2F7",borderRadius:12,padding:"7px 12px",cursor:"pointer",display:"flex",alignItems:"center",gap:7,border:"1.5px solid",borderColor:selectedOffer?.id===fig.id?"#2C3E50":"transparent" }}><span style={{ fontSize:18 }}>{fig.image}</span><div><div style={{ fontSize:10,fontWeight:800,color:selectedOffer?.id===fig.id?"#fff":"#2C3E50" }}>{fig.name}</div><div style={{ fontSize:9,color:selectedOffer?.id===fig.id?"rgba(255,255,255,0.6)":"#888" }}>${fig.value}</div></div></div>)}
+              <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:20 }}>
+                {[["Incoming", pendingIncoming, "#00b894"],["Sent", pendingSent, "#f0932b"],["Done", completedTrades, "#aaa"]].map(([label,n,c])=>(
+                  <div key={label} style={{ background:"#fff",borderRadius:14,padding:"12px",textAlign:"center",boxShadow:"0 2px 8px rgba(0,0,0,0.05)" }}>
+                    <div style={{ fontWeight:900,fontSize:22,color:c }}>{n}</div>
+                    <div style={{ fontSize:10,color:"#aaa",fontWeight:600 }}>{label}</div>
                   </div>
-                )}
+                ))}
               </div>
 
-              {liked.length===0?(
+              {myTradeProposals.filter((p) => p.status === "pending" || p.status === "completed").length === 0 ? (
                 <div style={{ textAlign:"center",padding:"48px 20px",background:"#fff",borderRadius:20,border:"1px dashed #DCE6F0" }}>
                   <div style={{ fontSize:48,marginBottom:12 }}>🤝</div>
-                  <div style={{ fontWeight:700,fontSize:15,color:"#2C3E50",marginBottom:6 }}>No proposed trades</div>
-                  <div style={{ fontSize:12,color:"#aaa",marginBottom:16 }}>Browse listings and swipe right to add proposals here.</div>
+                  <div style={{ fontWeight:700,fontSize:15,color:"#2C3E50",marginBottom:6 }}>No trades yet</div>
+                  <div style={{ fontSize:12,color:"#aaa",marginBottom:16 }}>Browse listings and tap ⇄ Trade to send a proposal.</div>
                   <button type="button" onClick={()=>setTab("browse")} style={{ background:"#2C3E50",border:"none",borderRadius:14,padding:"10px 22px",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer" }}>Browse Listings</button>
                 </div>
-              ):liked.map(card=>{
-            const {from}=lc(card.line);
-            const diff = selectedOffer ? card.value - selectedOffer.value : 0;
-            const iOwe = diff > 0;
-            const isEven = Math.abs(diff) < 5;
-            return (
-              <div key={card.id} style={{ background:"#fff",borderRadius:20,padding:"16px",boxShadow:"0 2px 14px rgba(0,0,0,0.06)",border:"1px solid #E4EBF2",marginBottom:12 }}>
-                {/* Their figure */}
-                <div style={{ display:"flex",gap:12,alignItems:"center",marginBottom:12 }}>
-                  <FigureImage card={card} size={58} borderRadius={14} onVideoOpen={() => { const e = getListingVideoEmbed(card.videoUrl); if (e) setListingVideoModal(e); }} />
-                  <div style={{ flex:1 }}><div style={{ fontWeight:800,fontSize:14,color:"#2C3E50" }}>{card.name}</div><div style={{ fontSize:11,color:"#aaa" }}>{card.line} · {condLabel(card.isNew)}</div><div style={{ fontWeight:800,fontSize:14,color:from,marginTop:3 }}>${card.value}</div></div>
-                  <div style={{ textAlign:"right" }}>
-                    <div style={{ fontSize:22 }}>{card.owner?.avatar}</div>
-                    <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:4, marginTop:2 }}>
-                      <div style={{ fontSize:10,color:"#bbb",fontWeight:700 }}>{card.owner?.username}</div>
-                      {card.owner?.verified && <VerifiedInHandBadge compact />}
+              ) : myTradeProposals.filter((p) => p.status === "pending" || p.status === "completed").map((proposal) => {
+                const isIncoming = proposal.receiverId === activeUserId && proposal.status === "pending";
+                const isSent = proposal.proposerId === activeUserId && proposal.status === "pending";
+                const isDone = proposal.status === "completed";
+                const otherId = proposal.proposerId === activeUserId ? proposal.receiverId : proposal.proposerId;
+                const other = getUser(otherId);
+                const targetCard = db.cards.find((c) => c.id === proposal.targetCardId);
+                const offeredCards = proposal.offeredCardIds.map((id) => db.cards.find((c) => c.id === id)).filter(Boolean);
+                const offeredTotal = offeredCards.reduce((s, c) => s + c.value, 0);
+                const statusCfg = isDone
+                  ? { label:"Trade complete", color:"#aaa", bg:"#f5f5f5", icon:"✅" }
+                  : isIncoming
+                    ? { label:"They want to trade!", color:"#00b894", bg:"#f0fff8", icon:"🔔" }
+                    : { label:"Awaiting response", color:"#f0932b", bg:"#fff8e6", icon:"⏳" };
+                if (!targetCard) return null;
+                return (
+                  <div key={proposal.id} style={{ background:"#fff",borderRadius:20,padding:"16px",marginBottom:12,boxShadow:"0 2px 12px rgba(0,0,0,0.06)",border:`1px solid ${isIncoming?"#00b89433":"#E4EBF2"}` }}>
+                    <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14 }}>
+                      <div style={{ background:statusCfg.bg,borderRadius:20,padding:"4px 12px",display:"flex",alignItems:"center",gap:5 }}>
+                        <span style={{ fontSize:12 }}>{statusCfg.icon}</span>
+                        <span style={{ fontSize:11,fontWeight:700,color:statusCfg.color }}>{statusCfg.label}</span>
+                      </div>
+                      {proposal.topupSuggested > 0 && (
+                        <span style={{ fontSize:10,fontWeight:700,color:"#00b894",background:"#f0fff8",borderRadius:8,padding:"3px 8px" }}>💰 ${proposal.topupSuggested} top-up</span>
+                      )}
                     </div>
+                    <div style={{ display:"grid",gridTemplateColumns:"1fr auto 1fr",gap:10,alignItems:"center",marginBottom:14 }}>
+                      <div style={{ background:"#EEF2F7",borderRadius:14,padding:"12px",textAlign:"center" }}>
+                        <div style={{ fontSize:10,fontWeight:700,color:"#aaa",marginBottom:6 }}>{proposal.proposerId === activeUserId ? "YOU OFFER" : "THEY OFFER"}</div>
+                        {offeredCards.map((f) => (
+                          <div key={f.id} style={{ marginBottom:6 }}>
+                            <FigureImage card={f} size={36} borderRadius={10} />
+                            <div style={{ fontWeight:700,fontSize:10,color:"#2C3E50",marginTop:4 }}>{f.name}</div>
+                            <div style={{ fontWeight:800,fontSize:12,color:"#2C3E50" }}>${f.value}</div>
+                          </div>
+                        ))}
+                        {offeredCards.length > 1 && <div style={{ fontWeight:800,fontSize:12,color:"#2C3E50",borderTop:"1px solid #DCE6F0",paddingTop:6 }}>${offeredTotal} total</div>}
+                      </div>
+                      <div style={{ textAlign:"center",fontSize:22 }}>⇄</div>
+                      <div style={{ background:"#EAF1FA",borderRadius:14,padding:"12px",textAlign:"center" }}>
+                        <div style={{ fontSize:10,fontWeight:700,color:"#3A7BD5",marginBottom:6 }}>{proposal.receiverId === activeUserId ? "YOU GET" : "THEY GET"}</div>
+                        <FigureImage card={targetCard} size={40} borderRadius={12} />
+                        <div style={{ fontWeight:700,fontSize:11,color:"#2C3E50",marginTop:6 }}>{targetCard.name}</div>
+                        <div style={{ fontWeight:800,fontSize:13,color:"#2C3E50" }}>${targetCard.value}</div>
+                      </div>
+                    </div>
+                    <div style={{ display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:"#f9f9f9",borderRadius:12,marginBottom:12 }}>
+                      <UserAvatar user={other} size={32} />
+                      <div style={{ flex:1 }}>
+                        <div style={{ fontWeight:700,fontSize:12,color:"#2C3E50",display:"flex",alignItems:"center",gap:5 }}>{other?.username} {other?.verified && <VerifiedInHandBadge compact />}</div>
+                        <div style={{ fontSize:10,color:"#aaa" }}>⭐ {other?.rating}</div>
+                      </div>
+                      <button type="button" onClick={()=>openThread(otherId, targetCard)} style={{ background:"transparent",border:"none",fontSize:14,cursor:"pointer" }}>💬</button>
+                    </div>
+                    {isIncoming && (
+                      <div style={{ display:"flex",gap:8,flexWrap:"wrap" }}>
+                        <button type="button" onClick={()=>handleDeclineTradeProposal(proposal.id)} style={{ flex:1,minWidth:100,background:"#fff0f0",border:"2px solid #ff6b6b33",borderRadius:12,padding:"11px",fontWeight:700,fontSize:13,color:"#ff6b6b",cursor:"pointer" }}>Decline</button>
+                        {proposal.topupSuggested > 0 && (proposal.topupCounterRound || 0) < 3 && (
+                          <button type="button" onClick={()=>setCounterTopupFor(proposal)} style={{ flex:1,minWidth:100,background:"#EAF1FA",border:"none",borderRadius:12,padding:"11px",fontWeight:700,fontSize:12,color:"#3A7BD5",cursor:"pointer" }}>Counter</button>
+                        )}
+                        <button type="button" onClick={()=>handleAcceptTradeProposal(proposal)} style={{ flex:2,minWidth:140,background:"#2C3E50",border:"none",borderRadius:12,padding:"11px",fontWeight:800,fontSize:13,color:"#fff",cursor:"pointer" }}>✓ Accept Trade</button>
+                      </div>
+                    )}
+                    {isSent && (
+                      <div style={{ display:"flex",gap:8 }}>
+                        <button type="button" onClick={()=>handleWithdrawTradeProposal(proposal.id)} style={{ flex:1,background:"#EEF2F7",border:"none",borderRadius:12,padding:"11px",fontWeight:700,fontSize:12,color:"#888",cursor:"pointer" }}>Withdraw</button>
+                        <button type="button" onClick={()=>openThread(otherId, targetCard)} style={{ flex:2,background:"#EEF2F7",border:"none",borderRadius:12,padding:"11px",fontWeight:700,fontSize:12,color:"#3A7BD5",cursor:"pointer" }}>💬 Message</button>
+                      </div>
+                    )}
+                    {isDone && (
+                      <div style={{ textAlign:"center",fontSize:11,color:"#aaa" }}>Trade complete · Rate {other?.username?.split("_")[0]} ⭐</div>
+                    )}
                   </div>
-                </div>
-
-                {/* Your offer */}
-                {selectedOffer && (
-                  <div style={{ background:"#f9f9f9",borderRadius:12,padding:"9px 12px",marginBottom:10,display:"flex",alignItems:"center",gap:8 }}>
-                    <span style={{ fontSize:9,fontWeight:700,color:"#bbb" }}>YOU OFFER</span>
-                    <span style={{ fontSize:18 }}>{selectedOffer.image}</span>
-                    <span style={{ fontWeight:700,fontSize:12,color:"#2C3E50" }}>{selectedOffer.name}</span>
-                    <span style={{ fontWeight:800,fontSize:12,color:"#4A90D9",marginLeft:"auto" }}>${selectedOffer.value}</span>
-                  </div>
-                )}
-
-                {/* Differential banner */}
-                {selectedOffer && (
-                  <div style={{ background: isEven?"#f0fff8": iOwe?"#fff8e6":"#EAF1FA", borderRadius:10, padding:"8px 12px", marginBottom:8, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-                    <span style={{ fontSize:11, fontWeight:700, color: isEven?"#00b894": iOwe?"#f0932b":"#3A7BD5" }}>
-                      {isEven ? "⚖️ Even trade!" : iOwe ? `⚠️ You owe $${Math.abs(diff)} sweetener` : `💰 You'd receive $${Math.abs(diff)} sweetener`}
-                    </span>
-                    <span style={{ fontSize:10, color:"#bbb" }}>
-                      ${card.value} vs ${selectedOffer.value}
-                    </span>
-                  </div>
-                )}
-                {/* Trade fee notice */}
-                <div style={{ background:"#EAF1FA", borderRadius:8, padding:"6px 12px", marginBottom:12, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-                  <span style={{ fontSize:10, color:"#3A7BD5", fontWeight:700 }}>💳 Trade fee: $2.00 per party</span>
-                  <span style={{ fontSize:10, color:"#aaa" }}>Charged to each trader</span>
-                </div>
-
-                <div style={{ display:"flex",gap:8 }}>
-                  <button onClick={()=>openThread(card.owner?.id||card.ownerId, card)} style={{ flex:1,background:"#EEF2F7",border:"none",borderRadius:12,padding:"9px",fontWeight:700,fontSize:12,color:"#555",cursor:"pointer" }}>💬 Message</button>
-                  <button
-                    onClick={()=> selectedOffer ? setSweetenerTrade({ theirCard: card, myFigure: selectedOffer }) : notify("Pick a figure to offer first")}
-                    style={{ flex:2,background: isEven?"#2C3E50":`linear-gradient(135deg,${iOwe?"#f9ca24,#f0932b":"#3A7BD5,#5B8DD9"})`,border:"none",borderRadius:12,padding:"9px",fontWeight:800,fontSize:12,color:"#fff",cursor:"pointer" }}
-                  >
-                    {isEven ? "Confirm Trade 🤝" : iOwe ? `Pay $${Math.abs(diff)} & Trade 💛` : `Receive $${Math.abs(diff)} & Trade 💜`}
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+                );
+              })}
             </>
           )}
 
-          {tradesView === "history" && (
-            myTradeTxns.length === 0 ? (
-              <div style={{ textAlign:"center",padding:"48px 20px",background:"#fff",borderRadius:20,border:"1px dashed #DCE6F0" }}>
-                <div style={{ fontSize:48,marginBottom:12 }}>📋</div>
-                <div style={{ fontWeight:700,fontSize:15,color:"#2C3E50" }}>No completed trades yet</div>
-                <div style={{ fontSize:12,color:"#aaa",marginTop:8 }}>Confirmed swaps and sweeteners appear here.</div>
-              </div>
-            ) : myTradeTxns.map((txn) => {
-              const otherId = txn.buyerId === activeUserId ? txn.sellerId : txn.buyerId;
-              const other = getUser(otherId);
-              return (
-                <div key={txn.id} style={{ background:"#fff",borderRadius:16,padding:"14px 16px",border:"1px solid #E4EBF2",marginBottom:10 }}>
-                  <div style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10 }}>
-                    <div>
-                      <div style={{ fontWeight:800,fontSize:14,color:"#2C3E50" }}>{txn.cardName || "Trade"}</div>
-                      <div style={{ fontSize:11,color:"#aaa",marginTop:4 }}>with {other?.username || "collector"} · {txn.date}</div>
-                      <div style={{ fontSize:10,color:"#888",marginTop:4 }}>{txn.type === "sweetener" ? "Sweetener payment" : "Figure swap"} · {txn.status}</div>
+          {tradesView === "purchases" && (() => {
+            const inTransit = myPurchases.filter((t) => {
+              const s = (db.shipments || []).find((sh) => sh.txnId === t.id);
+              return t.status === "in_escrow" || (s && s.status !== "delivered");
+            }).length;
+            const delivered = myPurchases.filter((t) => t.status === "completed").length;
+            const totalSpent = myPurchases.reduce((s, t) => s + (t.amount || 0), 0);
+            return (
+              <>
+                <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:20 }}>
+                  {[["In Transit", inTransit, "#f0932b"],["Delivered", delivered, "#00b894"],["Spent", `$${fmt(totalSpent)}`, "#2C3E50"]].map(([label,n,c])=>(
+                    <div key={label} style={{ background:"#fff",borderRadius:14,padding:"12px",textAlign:"center",boxShadow:"0 2px 8px rgba(0,0,0,0.05)" }}>
+                      <div style={{ fontWeight:900,fontSize:label==="Spent"?16:22,color:c }}>{n}</div>
+                      <div style={{ fontSize:10,color:"#aaa",fontWeight:600 }}>{label}</div>
                     </div>
-                    <div style={{ fontWeight:800,fontSize:14,color:txn.type === "sweetener" ? "#f0932b" : "#3A7BD5" }}>
-                      {txn.type === "sweetener" ? `$${fmt(txn.amount)}` : "⇄ Trade"}
-                    </div>
-                  </div>
+                  ))}
                 </div>
-              );
-            })
-          )}
+                {myPurchases.length === 0 ? (
+                  <div style={{ textAlign:"center",padding:"48px 20px",background:"#fff",borderRadius:20,border:"1px dashed #DCE6F0" }}>
+                    <div style={{ fontSize:48,marginBottom:12 }}>📦</div>
+                    <div style={{ fontWeight:700,fontSize:15,color:"#2C3E50" }}>No purchases yet</div>
+                    <button type="button" onClick={()=>setTab("browse")} style={{ marginTop:16,background:"#2C3E50",border:"none",borderRadius:14,padding:"10px 22px",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer" }}>Browse Listings</button>
+                  </div>
+                ) : myPurchases.map((txn) => {
+                  const seller = getUser(txn.sellerId);
+                  const shipment = (db.shipments || []).find((s) => s.txnId === txn.id);
+                  const stepIdx = shipment ? trackingStepIndex(shipment.status) : 0;
+                  const isDelivered = txn.status === "completed" || shipment?.status === "delivered";
+                  const card = db.cards.find((c) => c.id === txn.cardId);
+                  const alreadyRated = (db.ratings || []).some((r) => r.txnId === txn.id && r.fromUserId === activeUserId);
+                  return (
+                    <div key={txn.id} style={{ background:"#fff",borderRadius:20,padding:"16px",marginBottom:12,boxShadow:"0 2px 12px rgba(0,0,0,0.06)",border:"1px solid #E4EBF2" }}>
+                      <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14 }}>
+                        <span style={{ fontSize:11,fontWeight:700,color:isDelivered?"#00b894":"#f0932b",background:isDelivered?"#f0fff8":"#fff8e6",borderRadius:20,padding:"4px 12px" }}>{isDelivered ? "📬 Delivered" : "📦 In Transit"}</span>
+                        <span style={{ fontSize:10,color:"#ccc" }}>{txn.date}</span>
+                      </div>
+                      <div style={{ display:"flex",gap:12,alignItems:"center",marginBottom:14 }}>
+                        {card ? <FigureImage card={card} size={56} borderRadius={14} /> : <div style={{ width:56,height:56,borderRadius:14,background:"#EEF2F7",display:"flex",alignItems:"center",justifyContent:"center",fontSize:28 }}>📦</div>}
+                        <div style={{ flex:1 }}>
+                          <div style={{ fontWeight:800,fontSize:14,color:"#2C3E50" }}>{txn.cardName || card?.name || "Purchase"}</div>
+                          <div style={{ fontSize:11,color:"#aaa" }}>{seller?.username}</div>
+                          <div style={{ fontWeight:900,fontSize:16,color:"#2C3E50",marginTop:4 }}>${fmt(txn.amount)}</div>
+                        </div>
+                      </div>
+                      {shipment && (
+                        <div style={{ display:"flex",gap:4,marginBottom:12 }}>
+                          {TRACKING_STEPS.map((_, i) => (
+                            <div key={i} style={{ flex:1,height:4,borderRadius:4,background:i <= stepIdx ? "#2C3E50" : "#E4EBF2" }} />
+                          ))}
+                        </div>
+                      )}
+                      {!isDelivered && shipment && (
+                        <div style={{ background:"#EAF1FA",borderRadius:10,padding:"8px 12px",marginBottom:12,fontSize:11,color:"#3A7BD5" }}>🔒 Payment held in escrow until delivery</div>
+                      )}
+                      <div style={{ display:"flex",gap:8 }}>
+                        <button type="button" onClick={()=>openThread(txn.sellerId, card)} style={{ flex:1,background:"#EEF2F7",border:"none",borderRadius:12,padding:"10px",fontWeight:700,fontSize:12,color:"#555",cursor:"pointer" }}>💬 Message</button>
+                        {shipment && <button type="button" onClick={()=>setTrackingModal(shipment)} style={{ flex:1,background:"#EEF2F7",border:"none",borderRadius:12,padding:"10px",fontWeight:700,fontSize:12,color:"#555",cursor:"pointer" }}>Track</button>}
+                        {isDelivered && !alreadyRated && seller && (
+                          <button type="button" onClick={()=>setRatingModal({ txn, otherUser: seller, isBuyer: true })} style={{ flex:1,background:"linear-gradient(135deg,#f9ca24,#f0932b)",border:"none",borderRadius:12,padding:"10px",fontWeight:800,fontSize:12,color:"#fff",cursor:"pointer" }}>⭐ Rate</button>
+                        )}
+                        {isDelivered && (
+                          <button type="button" onClick={()=>setDisputeModal({ txn, shipment, disputeKind:"purchase" })} style={{ flex:1,background:"#fff0f0",border:"none",borderRadius:12,padding:"10px",fontWeight:700,fontSize:12,color:"#ff6b6b",cursor:"pointer" }}>🚨 Issue</button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </>
+            );
+          })()}
         </div>
       )}
 
@@ -5143,7 +5572,7 @@ function AppShell({ onSignOut, authUser }) {
               onClick={() => {
                 if (supabase) reloadFromSupabase();
                 else {
-                  setDb({ users:SEED_USERS,cards:SEED_CARDS,transactions:SEED_TRANSACTIONS,shipments:SEED_SHIPMENTS,disputes:SEED_DISPUTES,ratings:SEED_RATINGS,messages:SEED_MESSAGES,notifications:SEED_NOTIFICATIONS });
+                  setDb({ users:SEED_USERS,cards:SEED_CARDS,transactions:SEED_TRANSACTIONS,shipments:SEED_SHIPMENTS,disputes:SEED_DISPUTES,ratings:SEED_RATINGS,messages:SEED_MESSAGES,notifications:SEED_NOTIFICATIONS,tradeProposals:[] });
                   notify("🔄 Reset");
                 }
               }}
@@ -5522,11 +5951,22 @@ function AppShell({ onSignOut, authUser }) {
         </div>
       )}
 
-      {!(tab === "messages" && activeThread) && (
+      </>
+      )}
+
+      {counterTopupFor && (
+        <CounterTopupModal
+          proposal={counterTopupFor}
+          onSubmit={(amount) => handleCounterTopup(counterTopupFor.id, amount)}
+          onClose={() => setCounterTopupFor(null)}
+        />
+      )}
+
+      {!(tab === "messages" && activeThread) && !detailListing && (
       <nav className="inhand-bottom-nav" aria-label="Primary">
-        {NAV_ITEMS.map(([id, label]) => (
+        {BOTTOM_NAV_ITEMS.map(([id, label, icon]) => (
           <button key={id} type="button" data-active={tab === id ? "true" : "false"} onClick={() => goToTab(id)}>
-            <span aria-hidden="true" />
+            <span aria-hidden="true">{icon}</span>
             <span>{label}</span>
           </button>
         ))}

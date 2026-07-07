@@ -71,3 +71,12 @@ export async function swapTradeListings(takeId, giveId) {
     p_give_id: giveId,
   });
 }
+
+/** Multi-figure bundle swap — caller owns all give listings, receives take listing. */
+export async function swapTradeBundle(takeId, giveIds) {
+  if (!supabase) return { data: null, error: null, skipped: true };
+  return supabase.rpc("swap_trade_bundle", {
+    p_take_id: takeId,
+    p_give_ids: giveIds,
+  });
+}

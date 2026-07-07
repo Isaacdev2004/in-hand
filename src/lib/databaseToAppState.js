@@ -145,6 +145,24 @@ function notifFromRow(r) {
   };
 }
 
+export function tradeProposalFromRow(r) {
+  if (!r) return r;
+  return {
+    id: r.id,
+    proposerId: r.proposer_id,
+    receiverId: r.receiver_id,
+    targetCardId: r.target_card_id,
+    offeredCardIds: Array.isArray(r.offered_card_ids) ? r.offered_card_ids : [],
+    topupSuggested: r.topup_suggested != null ? Number(r.topup_suggested) : 0,
+    topupAgreed: r.topup_agreed != null ? Number(r.topup_agreed) : 0,
+    topupCounterRound: r.topup_counter_round ?? 0,
+    topupStatus: r.topup_status || "none",
+    lastTopupBy: r.last_topup_by || null,
+    status: r.status,
+    createdAt: r.created_at,
+  };
+}
+
 /**
  * Build legacy `messages` thread array from normalized conversation tables.
  */
@@ -192,6 +210,7 @@ export async function fetchAppDatabaseShape(client, forUserId) {
     { data: cParts, error: e8 },
     { data: chatMessages, error: e9 },
     { data: notifs, error: e10 },
+    { data: tradeProps, error: e11 },
   ] = await Promise.all([
     client.from("users").select("*"),
     client.from("listings").select("*"),
@@ -205,8 +224,15 @@ export async function fetchAppDatabaseShape(client, forUserId) {
     forUserId
       ? client.from("notifications").select("*").eq("recipient_id", forUserId)
       : client.from("notifications").select("*"),
+    forUserId
+      ? client
+          .from("trade_proposals")
+          .select("*")
+          .or(`proposer_id.eq.${forUserId},receiver_id.eq.${forUserId}`)
+          .order("created_at", { ascending: false })
+      : client.from("trade_proposals").select("*").order("created_at", { ascending: false }),
   ]);
-  const err = e1 || e2 || e3 || e4 || e5 || e6 || e7 || e8 || e9 || e10;
+  const err = e1 || e2 || e3 || e4 || e5 || e6 || e7 || e8 || e9 || e10 || e11;
   if (err) throw err;
 
   const messages = mergeConversationsToThreads(
@@ -224,5 +250,6 @@ export async function fetchAppDatabaseShape(client, forUserId) {
     ratings: (ratings || []).map(ratingFromRow),
     messages,
     notifications: (notifs || []).map(notifFromRow),
+    tradeProposals: (tradeProps || []).map(tradeProposalFromRow),
   };
 }
