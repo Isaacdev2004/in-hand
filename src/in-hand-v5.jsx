@@ -4500,14 +4500,19 @@ function AppShell({ onSignOut, authUser }) {
     return last && last.from !== activeUserId ? n + 1 : n;
   }, 0);
 
-  const openThread = (otherUserId, card) => {
+  const openThread = async (otherUserId, card, initialText) => {
+    const text = initialText?.trim();
     const existing = (db.messages||[]).find(th =>
       th.participants.includes(activeUserId) &&
       th.participants.includes(otherUserId) &&
       th.cardId === card?.id
     );
-    if (existing) { setActiveThread(existing.id); setTab("messages"); return; }
-    // Create new thread
+    if (existing) {
+      setActiveThread(existing.id);
+      setTab("messages");
+      if (text) await sendMessage(existing.id, text);
+      return;
+    }
     const newThread = {
       id: "th" + Date.now(),
       participants: [activeUserId, otherUserId],
@@ -4516,19 +4521,18 @@ function AppShell({ onSignOut, authUser }) {
       cardImage: card?.image || null,
       messages: [],
     };
-    (async () => {
-      if (supabase) {
-        const { error } = await insertConversation(newThread);
-        if (error) {
-          console.error("In Hand: conversation creation failed", error);
-          notify("❌ Could not start conversation");
-          return;
-        }
+    if (supabase) {
+      const { error } = await insertConversation(newThread);
+      if (error) {
+        console.error("In Hand: conversation creation failed", error);
+        notify("❌ Could not start conversation");
+        return;
       }
-      setDb(d => ({ ...d, messages: [...(d.messages||[]), newThread] }));
-      setActiveThread(newThread.id);
-      setTab("messages");
-    })();
+    }
+    setDb(d => ({ ...d, messages: [...(d.messages||[]), newThread] }));
+    setActiveThread(newThread.id);
+    setTab("messages");
+    if (text) await sendMessage(newThread.id, text);
   };
 
   const sendMessage = async (threadId, text) => {
@@ -4924,7 +4928,7 @@ function AppShell({ onSignOut, authUser }) {
             setDetailListing(null);
           }}
           onBuy={() => setCheckoutCard(detailListing)}
-          onMessage={() => openThread(detailListing.ownerId, detailListing)}
+          onMessage={(text) => openThread(detailListing.ownerId, detailListing, text)}
           onOpenPhotos={() => detailListing.photos?.length && setPhotoViewer({ photos: detailListing.photos, startIdx: 0 })}
           onOpenVideo={() => { const e = getListingVideoEmbed(detailListing.videoUrl); if (e) setListingVideoModal(e); }}
         />

@@ -30,7 +30,7 @@ export async function ensureUserProfile(user) {
   const row = {
     id: user.id,
     username,
-    avatar: username.slice(0, 2).toUpperCase(),
+    avatar: user.user_metadata?.avatar || username.slice(0, 2).toUpperCase(),
     rating: 5,
     trades_completed: 0,
     joined: new Date().toISOString().split("T")[0],

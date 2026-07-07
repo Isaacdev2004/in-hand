@@ -199,28 +199,13 @@ export function mergeConversationsToThreads(conversations, participants, chatRow
  * @param {string} [forUserId] — when set, only load notifications for this user (matches "current user" in the app)
  */
 export async function fetchAppDatabaseShape(client, forUserId) {
-  const [
-    { data: users, error: e1 },
-    { data: listings, error: e2 },
-    { data: transactions, error: e3 },
-    { data: shipments, error: e4 },
-    { data: disputes, error: e5 },
-    { data: ratings, error: e6 },
-    { data: conversations, error: e7 },
-    { data: cParts, error: e8 },
-    { data: chatMessages, error: e9 },
-    { data: notifs, error: e10 },
-    { data: tradeProps, error: e11 },
-  ] = await Promise.all([
+  const baseQueries = Promise.all([
     client.from("users").select("*"),
     client.from("listings").select("*"),
     client.from("transactions").select("*"),
     client.from("shipments").select("*"),
     client.from("disputes").select("*"),
     client.from("ratings").select("*"),
-    client.from("conversations").select("*"),
-    client.from("conversation_participants").select("*"),
-    client.from("chat_messages").select("*").order("created_at", { ascending: true }),
     forUserId
       ? client.from("notifications").select("*").eq("recipient_id", forUserId)
       : client.from("notifications").select("*"),
@@ -232,7 +217,56 @@ export async function fetchAppDatabaseShape(client, forUserId) {
           .order("created_at", { ascending: false })
       : client.from("trade_proposals").select("*").order("created_at", { ascending: false }),
   ]);
-  const err = e1 || e2 || e3 || e4 || e5 || e6 || e7 || e8 || e9 || e10 || e11;
+
+  let conversations = [];
+  let cParts = [];
+  let chatMessages = [];
+
+  if (forUserId) {
+    const { data: myParts, error: ep } = await client
+      .from("conversation_participants")
+      .select("conversation_id")
+      .eq("user_id", forUserId);
+    if (ep) throw ep;
+    const convIds = [...new Set((myParts || []).map((p) => p.conversation_id))];
+    if (convIds.length > 0) {
+      const [cRes, pRes, mRes] = await Promise.all([
+        client.from("conversations").select("*").in("id", convIds),
+        client.from("conversation_participants").select("*").in("conversation_id", convIds),
+        client.from("chat_messages").select("*").in("conversation_id", convIds).order("created_at", { ascending: true }),
+      ]);
+      if (cRes.error) throw cRes.error;
+      if (pRes.error) throw pRes.error;
+      if (mRes.error) throw mRes.error;
+      conversations = cRes.data || [];
+      cParts = pRes.data || [];
+      chatMessages = mRes.data || [];
+    }
+  } else {
+    const [cRes, pRes, mRes] = await Promise.all([
+      client.from("conversations").select("*"),
+      client.from("conversation_participants").select("*"),
+      client.from("chat_messages").select("*").order("created_at", { ascending: true }),
+    ]);
+    if (cRes.error) throw cRes.error;
+    if (pRes.error) throw pRes.error;
+    if (mRes.error) throw mRes.error;
+    conversations = cRes.data || [];
+    cParts = pRes.data || [];
+    chatMessages = mRes.data || [];
+  }
+
+  const [
+    { data: users, error: e1 },
+    { data: listings, error: e2 },
+    { data: transactions, error: e3 },
+    { data: shipments, error: e4 },
+    { data: disputes, error: e5 },
+    { data: ratings, error: e6 },
+    { data: notifs, error: e10 },
+    { data: tradeProps, error: e11 },
+  ] = await baseQueries;
+  const err = e1 || e2 || e3 || e4 || e5 || e6 || e10 || e11;
   if (err) throw err;
 
   const messages = mergeConversationsToThreads(
