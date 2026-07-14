@@ -216,8 +216,8 @@ function MarketValueModal({ card, onClose }) {
   const trendColor = trend==="up"?"#00b894":trend==="down"?"#ff6b6b":"#f0932b";
   const trendIcon  = trend==="up"?"↑":trend==="down"?"↓":"→";
   const sourceLine = live
-    ? (mv.sourceLabel || "Based on current eBay listings")
-    : "Demo data (eBay unavailable)";
+    ? "Based on recent eBay prices"
+    : "Estimated market data";
 
   return (
     <div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:700,display:"flex",alignItems:"flex-end",justifyContent:"center" }}>
@@ -315,15 +315,6 @@ function MarketValueModal({ card, onClose }) {
           <div style={{ fontSize:11,color:"#b42318",marginBottom:12 }}>{error} — showing fallback data.</div>
         )}
 
-        <div style={{ background:"#EAF1FA",borderRadius:14,padding:"12px 14px",marginBottom:20,display:"flex",gap:10 }}>
-          <span style={{ fontSize:18 }}>⚡</span>
-          <div>
-            <div style={{ fontWeight:700,fontSize:12,color:"#3A7BD5" }}>Powered by eBay</div>
-            <div style={{ fontSize:11,color:"#888",marginTop:2 }}>
-              Brand New and Used averages from current US Fixed Price listings (Browse API). Historical sold comps require a separate eBay product.
-            </div>
-          </div>
-        </div>
         <Btn onClick={onClose} style={{ background:"#2C3E50",color:"#fff",width:"100%" }}>Got it</Btn>
       </div>
     </div>
