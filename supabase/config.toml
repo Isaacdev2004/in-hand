@@ -12,3 +12,11 @@ verify_jwt = false
 [functions.create-shipping-label]
 # App sends the seller's Supabase JWT; function also validates seller + shipment.
 verify_jwt = false
+
+[functions.ebay-account-deletion]
+# eBay sends no JWT; this is a public compliance endpoint (challenge + notifications).
+verify_jwt = false
+
+[functions.ebay-market-value]
+# Public market lookup; eBay credentials stay in Edge Function secrets.
+verify_jwt = false

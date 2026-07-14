@@ -7,6 +7,8 @@ Set:
 - `STRIPE_SECRET_KEY` — from Stripe Dashboard (secret key)
 - `STRIPE_WEBHOOK_SECRET` — from Stripe → Webhooks → signing secret (after you add the endpoint below)
 - `SHIPPO_API_TOKEN` — from [Shippo → Settings → API](https://goshippo.com/user/settings/api) (test or live)
+- `EBAY_CLIENT_ID` / `EBAY_CLIENT_SECRET` / `EBAY_DEV_ID` — eBay Production App ID + Cert ID
+- `EBAY_VERIFICATION_TOKEN` / `EBAY_ENDPOINT_URL` — Marketplace Account Deletion challenge endpoint
 
 `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are available automatically to functions when deployed on Supabase.
 

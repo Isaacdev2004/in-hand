@@ -37,6 +37,7 @@ import {
 } from "./lib/marketplaceApi";
 import { startStripeCheckout } from "./lib/stripeCheckout";
 import { createShippingLabel } from "./lib/shippoLabel";
+import { fetchEbayMarketValue, getCachedMarketValue } from "./lib/ebayMarketValue";
 import { ensureUserProfile } from "./lib/authSession";
 import { updateOwnUser } from "./lib/usersApi";
 import {
@@ -91,10 +92,9 @@ const condLabel = (isNew) => (isNew ? "Brand New" : "Used");
 const condColor = (isNew) => isNew ? "#3A7BD5" : "#888";
 const condBg    = (isNew) => isNew ? "#f0f0ff" : "#EEF2F7";
 
-// ─── MARKET VALUE DATABASE ────────────────────────────────────────────────────
-// Each figure has separate new (sealed/inbox) and used (loose) market prices
-// Dev will replace getMarketValue() with live eBay Sold Listings API
-// eBay API: GET /buy/browse/v1/item_summary/search?q={name}+new&filter=soldItems:true
+// ─── MARKET VALUE (offline seed + live eBay Browse API) ───────────────────────
+// Live values come from Edge Function `ebay-market-value` (active listings by condition).
+// MARKET_DATA remains a fallback for demos / when eBay is unreachable.
 const MARKET_DATA = {
   "Snake Eyes (1982 O-Ring)":  { new:{ avg:520,  low:400,  high:680,  sales:6  }, used:{ avg:235, low:180, high:310, sales:14 }, trend:"up",   lastSold:"2024-11-09", history:[180,200,195,220,240,235,310,225,240,235,240,250,235,235] },
   "Optimus Prime G1 Boxed":    { new:{ avg:1300, low:980,  high:1700, sales:4  }, used:{ avg:550, low:420, high:720, sales:8  }, trend:"up",   lastSold:"2024-11-10", history:[420,450,500,480,530,560,550,600,580,550,570,720,610,550] },
@@ -112,7 +112,9 @@ const MARKET_DATA = {
   "Michelangelo '88":          { new:{ avg:620,  low:470,  high:800,  sales:6  }, used:{ avg:270, low:200, high:350, sales:13 }, trend:"up",   lastSold:"2024-11-11", history:[200,215,230,245,255,265,270,275,265,270,278,280,270,270] },
 };
 
-function getMarketValue(name) { return MARKET_DATA[name] || null; }
+function getMarketValue(name) {
+  return getCachedMarketValue(name) || MARKET_DATA[name] || null;
+}
 
 // Compare listing price against the correct tier (new or used)
 function getPriceBadge(listingPrice, mv, isNew) {
@@ -147,28 +149,75 @@ function MarketBadge({ name, value, isNew, mini }) {
 
 // ─── MARKET VALUE MODAL ───────────────────────────────────────────────────────
 function MarketValueModal({ card, onClose }) {
-  const mv = getMarketValue(card.name);
+  const [mv, setMv] = useState(() => getMarketValue(card.name));
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [live, setLive] = useState(() => !!getCachedMarketValue(card.name));
   const isNew = card.isNew;
   const { from } = lc(card.line);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const data = await fetchEbayMarketValue(card.name);
+        if (cancelled) return;
+        if (data) {
+          setMv(data);
+          setLive(true);
+        } else if (!getMarketValue(card.name)) {
+          setMv(null);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setError(e?.message || "Could not load eBay data");
+          setMv(getMarketValue(card.name));
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [card.name]);
+
+  if (loading && !mv) return (
+    <div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:700,display:"flex",alignItems:"flex-end",justifyContent:"center" }}>
+      <div style={{ background:"#fff",borderRadius:"28px 28px 0 0",padding:"28px 20px 40px",width:"100%",maxWidth:430,textAlign:"center" }}>
+        <div style={{ fontWeight:800,fontSize:16,color:"#2C3E50",marginBottom:8 }}>Checking eBay…</div>
+        <div style={{ fontSize:12,color:"#aaa",marginBottom:20 }}>Fetching live market prices for this figure.</div>
+        <Btn onClick={onClose} style={{ background:"#2C3E50",color:"#fff",width:"100%" }}>Close</Btn>
+      </div>
+    </div>
+  );
 
   if (!mv) return (
     <div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:700,display:"flex",alignItems:"flex-end",justifyContent:"center" }}>
       <div style={{ background:"#fff",borderRadius:"28px 28px 0 0",padding:"28px 20px 40px",width:"100%",maxWidth:430,textAlign:"center" }}>
         <div style={{ fontSize:40,marginBottom:12 }}>📡</div>
         <div style={{ fontWeight:800,fontSize:16,color:"#2C3E50",marginBottom:8 }}>No Market Data Yet</div>
-        <div style={{ fontSize:12,color:"#aaa",marginBottom:20 }}>eBay sold data will appear here once the API is connected by your developer.</div>
+        <div style={{ fontSize:12,color:"#aaa",marginBottom:20 }}>
+          {error || "No matching eBay listings were found for this figure name."}
+        </div>
         <Btn onClick={onClose} style={{ background:"#2C3E50",color:"#fff",width:"100%" }}>Got it</Btn>
       </div>
     </div>
   );
 
   const badge = getPriceBadge(card.value, mv, isNew);
-  const activeTier = isNew ? mv.new : mv.used;
-  const history = mv.history || [];
+  const activeTier = (isNew ? mv.new : mv.used) || mv.new || mv.used;
+  const history = mv.history?.length ? mv.history : [activeTier?.low, activeTier?.avg, activeTier?.high].filter(Boolean);
   const maxH = Math.max(...history), minH = Math.min(...history), range = maxH - minH || 1;
-  const points = history.map((v,i) => `${(i/(history.length-1))*260},${40 - ((v-minH)/range)*36}`).join(" ");
-  const trendColor = mv.trend==="up"?"#00b894":mv.trend==="down"?"#ff6b6b":"#f0932b";
-  const trendIcon  = mv.trend==="up"?"↑":mv.trend==="down"?"↓":"→";
+  const points = history.length > 1
+    ? history.map((v,i) => `${(i/(history.length-1))*260},${40 - ((v-minH)/range)*36}`).join(" ")
+    : `0,20 260,20`;
+  const trend = mv.trend || "flat";
+  const trendColor = trend==="up"?"#00b894":trend==="down"?"#ff6b6b":"#f0932b";
+  const trendIcon  = trend==="up"?"↑":trend==="down"?"↓":"→";
+  const sourceLine = live
+    ? (mv.sourceLabel || "Based on current eBay listings")
+    : "Demo data (eBay unavailable)";
 
   return (
     <div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:700,display:"flex",alignItems:"flex-end",justifyContent:"center" }}>
@@ -176,7 +225,9 @@ function MarketValueModal({ card, onClose }) {
         <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18 }}>
           <div>
             <div style={{ fontWeight:800,fontSize:18,color:"#2C3E50" }}>📊 Market Value</div>
-            <div style={{ fontSize:11,color:"#aaa",marginTop:2 }}>Based on recent eBay sales</div>
+            <div style={{ fontSize:11,color:"#aaa",marginTop:2 }}>
+              {loading ? "Refreshing from eBay…" : sourceLine}
+            </div>
           </div>
           <button onClick={onClose} style={{ background:"#E4EBF2",border:"none",borderRadius:"50%",width:32,height:32,fontSize:16,cursor:"pointer" }}>✕</button>
         </div>
@@ -186,7 +237,7 @@ function MarketValueModal({ card, onClose }) {
           <FigureImage card={card} size={56} borderRadius={12} />
           <div>
             <div style={{ fontWeight:800,fontSize:14,color:"#2C3E50" }}>{card.name}</div>
-            <div style={{ display:"flex",gap:6,marginTop:4,alignItems:"center" }}>
+            <div style={{ display:"flex",gap:6,marginTop:4,alignItems:"center",flexWrap:"wrap" }}>
               <span style={{ fontSize:10,fontWeight:800,background:condBg(isNew),color:condColor(isNew),borderRadius:6,padding:"2px 8px" }}>{condLabel(isNew)}</span>
               <span style={{ fontWeight:800,fontSize:13,color:from }}>Listed: ${card.value}</span>
               {badge && <span style={{ fontSize:10,background:badge.bg,color:badge.color,borderRadius:6,padding:"2px 8px",fontWeight:800 }}>{badge.short}</span>}
@@ -202,58 +253,75 @@ function MarketValueModal({ card, onClose }) {
           ].map(({ key, label, tier, active }) => (
             <div key={key} style={{ background:active?"#2C3E50":"#f9f9f9", borderRadius:16, padding:"14px 12px", border:`2px solid ${active?"#2C3E50":"transparent"}` }}>
               <div style={{ fontSize:11,fontWeight:700,color:active?"rgba(255,255,255,0.6)":"#aaa",marginBottom:6 }}>{label}</div>
-              <div style={{ fontWeight:900,fontSize:22,color:active?"#fff":from,marginBottom:2 }}>${tier.avg}</div>
-              <div style={{ fontSize:10,color:active?"rgba(255,255,255,0.4)":"#ccc" }}>avg · ${tier.low}–${tier.high}</div>
-              <div style={{ fontSize:10,color:active?"rgba(255,255,255,0.4)":"#ccc",marginTop:2 }}>{tier.sales} sales</div>
-              {active && <div style={{ fontSize:9,background:"rgba(255,255,255,0.15)",color:"#fff",borderRadius:5,padding:"2px 7px",marginTop:6,display:"inline-block",fontWeight:700 }}>THIS LISTING</div>}
+              {tier ? (
+                <>
+                  <div style={{ fontWeight:900,fontSize:22,color:active?"#fff":from,marginBottom:2 }}>${tier.avg}</div>
+                  <div style={{ fontSize:10,color:active?"rgba(255,255,255,0.4)":"#ccc" }}>avg · ${tier.low}–${tier.high}</div>
+                  <div style={{ fontSize:10,color:active?"rgba(255,255,255,0.4)":"#ccc",marginTop:2 }}>{tier.sales} listings</div>
+                </>
+              ) : (
+                <div style={{ fontSize:12,color:active?"rgba(255,255,255,0.5)":"#ccc",marginTop:8 }}>No data</div>
+              )}
+              {active && tier && <div style={{ fontSize:9,background:"rgba(255,255,255,0.15)",color:"#fff",borderRadius:5,padding:"2px 7px",marginTop:6,display:"inline-block",fontWeight:700 }}>THIS LISTING</div>}
             </div>
           ))}
         </div>
 
         {/* Price position bar */}
-        <div style={{ background:"#f9f9f9",borderRadius:14,padding:"14px",marginBottom:16 }}>
-          <div style={{ display:"flex",justifyContent:"space-between",marginBottom:8 }}>
-            <span style={{ fontSize:12,fontWeight:700,color:"#555" }}>Price Position</span>
-            <span style={{ fontSize:12,fontWeight:800,color:badge?.color }}>{badge?.label}</span>
+        {activeTier && (
+          <div style={{ background:"#f9f9f9",borderRadius:14,padding:"14px",marginBottom:16 }}>
+            <div style={{ display:"flex",justifyContent:"space-between",marginBottom:8 }}>
+              <span style={{ fontSize:12,fontWeight:700,color:"#555" }}>Price Position</span>
+              <span style={{ fontSize:12,fontWeight:800,color:badge?.color }}>{badge?.label}</span>
+            </div>
+            <div style={{ position:"relative",height:8,background:"linear-gradient(90deg,#00b894,#f9ca24,#ff6b6b)",borderRadius:6,marginBottom:6 }}>
+              {(() => {
+                const spread = (activeTier.high - activeTier.low) || 1;
+                const pct = Math.min(Math.max(((card.value - activeTier.low) / spread) * 100, 2), 98);
+                return <div style={{ position:"absolute",top:-4,left:`${pct}%`,transform:"translateX(-50%)",width:16,height:16,borderRadius:"50%",background:"#2C3E50",border:"3px solid #fff",boxShadow:"0 2px 6px rgba(0,0,0,0.2)" }} />;
+              })()}
+            </div>
+            <div style={{ display:"flex",justifyContent:"space-between",fontSize:10,color:"#aaa" }}>
+              <span>Low ${activeTier.low}</span><span>High ${activeTier.high}</span>
+            </div>
           </div>
-          <div style={{ position:"relative",height:8,background:"linear-gradient(90deg,#00b894,#f9ca24,#ff6b6b)",borderRadius:6,marginBottom:6 }}>
-            {(() => {
-              const pct = Math.min(Math.max(((card.value - activeTier.low) / (activeTier.high - activeTier.low)) * 100, 2), 98);
-              return <div style={{ position:"absolute",top:-4,left:`${pct}%`,transform:"translateX(-50%)",width:16,height:16,borderRadius:"50%",background:"#2C3E50",border:"3px solid #fff",boxShadow:"0 2px 6px rgba(0,0,0,0.2)" }} />;
-            })()}
-          </div>
-          <div style={{ display:"flex",justifyContent:"space-between",fontSize:10,color:"#aaa" }}>
-            <span>Low ${activeTier.low}</span><span>High ${activeTier.high}</span>
-          </div>
-        </div>
+        )}
 
-        {/* Sparkline (based on used history as baseline) */}
-        <div style={{ background:"#f9f9f9",borderRadius:14,padding:"14px",marginBottom:16 }}>
-          <div style={{ display:"flex",justifyContent:"space-between",marginBottom:10,alignItems:"center" }}>
-            <span style={{ fontSize:12,fontWeight:700,color:"#555" }}>Used Price Trend</span>
-            <span style={{ fontSize:12,fontWeight:800,color:trendColor }}>{trendIcon} {mv.trend.charAt(0).toUpperCase()+mv.trend.slice(1)}</span>
+        {/* Sparkline */}
+        {history.length > 1 && (
+          <div style={{ background:"#f9f9f9",borderRadius:14,padding:"14px",marginBottom:16 }}>
+            <div style={{ display:"flex",justifyContent:"space-between",marginBottom:10,alignItems:"center" }}>
+              <span style={{ fontSize:12,fontWeight:700,color:"#555" }}>Price Range Sample</span>
+              <span style={{ fontSize:12,fontWeight:800,color:trendColor }}>{trendIcon} {trend.charAt(0).toUpperCase()+trend.slice(1)}</span>
+            </div>
+            <svg width="100%" height="52" viewBox="0 0 260 44" style={{ overflow:"visible" }}>
+              <defs>
+                <linearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={trendColor} stopOpacity="0.2"/>
+                  <stop offset="100%" stopColor={trendColor} stopOpacity="0"/>
+                </linearGradient>
+              </defs>
+              <polygon points={`0,44 ${points} 260,44`} fill="url(#sparkGrad)" />
+              <polyline points={points} fill="none" stroke={trendColor} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+              {(() => { const lp=points.split(" "); const [lx,ly]=lp[lp.length-1].split(","); return <circle cx={lx} cy={ly} r="4" fill={trendColor} />; })()}
+            </svg>
+            <div style={{ display:"flex",justifyContent:"space-between",fontSize:10,color:"#ccc",marginTop:4 }}>
+              <span>Low → high sample</span><span>Checked {mv.lastSold}</span>
+            </div>
           </div>
-          <svg width="100%" height="52" viewBox="0 0 260 44" style={{ overflow:"visible" }}>
-            <defs>
-              <linearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={trendColor} stopOpacity="0.2"/>
-                <stop offset="100%" stopColor={trendColor} stopOpacity="0"/>
-              </linearGradient>
-            </defs>
-            <polygon points={`0,44 ${points} 260,44`} fill="url(#sparkGrad)" />
-            <polyline points={points} fill="none" stroke={trendColor} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-            {(() => { const lp=points.split(" "); const [lx,ly]=lp[lp.length-1].split(","); return <circle cx={lx} cy={ly} r="4" fill={trendColor} />; })()}
-          </svg>
-          <div style={{ display:"flex",justifyContent:"space-between",fontSize:10,color:"#ccc",marginTop:4 }}>
-            <span>14 sales ago</span><span>Last sold {mv.lastSold}</span>
-          </div>
-        </div>
+        )}
+
+        {error && (
+          <div style={{ fontSize:11,color:"#b42318",marginBottom:12 }}>{error} — showing fallback data.</div>
+        )}
 
         <div style={{ background:"#EAF1FA",borderRadius:14,padding:"12px 14px",marginBottom:20,display:"flex",gap:10 }}>
           <span style={{ fontSize:18 }}>⚡</span>
           <div>
-            <div style={{ fontWeight:700,fontSize:12,color:"#3A7BD5" }}>Powered by eBay Sold Listings</div>
-            <div style={{ fontSize:11,color:"#888",marginTop:2 }}>Prices shown separately for Brand New and Used. Your dev connects the eBay API to keep these live.</div>
+            <div style={{ fontWeight:700,fontSize:12,color:"#3A7BD5" }}>Powered by eBay</div>
+            <div style={{ fontSize:11,color:"#888",marginTop:2 }}>
+              Brand New and Used averages from current US Fixed Price listings (Browse API). Historical sold comps require a separate eBay product.
+            </div>
           </div>
         </div>
         <Btn onClick={onClose} style={{ background:"#2C3E50",color:"#fff",width:"100%" }}>Got it</Btn>
