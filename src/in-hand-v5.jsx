@@ -185,7 +185,7 @@ function MarketValueModal({ card, onClose }) {
   if (loading && !mv) return (
     <div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:700,display:"flex",alignItems:"flex-end",justifyContent:"center" }}>
       <div style={{ background:"#fff",borderRadius:"28px 28px 0 0",padding:"28px 20px 40px",width:"100%",maxWidth:430,textAlign:"center" }}>
-        <div style={{ fontWeight:800,fontSize:16,color:"#2C3E50",marginBottom:8 }}>Checking eBay…</div>
+        <div style={{ fontWeight:800,fontSize:16,color:"#2C3E50",marginBottom:8 }}>Loading</div>
         <div style={{ fontSize:12,color:"#aaa",marginBottom:20 }}>Fetching live market prices for this figure.</div>
         <Btn onClick={onClose} style={{ background:"#2C3E50",color:"#fff",width:"100%" }}>Close</Btn>
       </div>
@@ -226,7 +226,7 @@ function MarketValueModal({ card, onClose }) {
           <div>
             <div style={{ fontWeight:800,fontSize:18,color:"#2C3E50" }}>📊 Market Value</div>
             <div style={{ fontSize:11,color:"#aaa",marginTop:2 }}>
-              {loading ? "Refreshing from eBay…" : sourceLine}
+              {loading ? "Loading…" : sourceLine}
             </div>
           </div>
           <button onClick={onClose} style={{ background:"#E4EBF2",border:"none",borderRadius:"50%",width:32,height:32,fontSize:16,cursor:"pointer" }}>✕</button>
@@ -3532,10 +3532,26 @@ export default function InHand() {
 
   useEffect(() => {
     async function init() {
-      try { const r = await window.storage.get("inhand-onboarded"); if (r) setOnboardingDone(true); } catch {}
+      try {
+        const r = await window.storage?.get?.("inhand-onboarded");
+        if (r) setOnboardingDone(true);
+      } catch {
+        /* ignore */
+      }
     }
     init();
   }, []);
+
+  // Logged-in users skip intro and never see it again
+  useEffect(() => {
+    if (!authUser) return;
+    setOnboardingDone(true);
+    try {
+      window.storage?.set?.("inhand-onboarded", "1");
+    } catch {
+      /* ignore */
+    }
+  }, [authUser]);
 
   useEffect(() => {
     if (!supabase) {
@@ -3574,7 +3590,11 @@ export default function InHand() {
 
   const completeOnboarding = async () => {
     setOnboardingDone(true);
-    try { await window.storage.set("inhand-onboarded","1"); } catch {}
+    try {
+      await window.storage?.set?.("inhand-onboarded", "1");
+    } catch {
+      /* ignore */
+    }
   };
 
   const handleSignOut = async () => {
@@ -3609,8 +3629,9 @@ export default function InHand() {
     }
   };
 
-  if (!onboardingDone) return <OnboardingScreen onComplete={completeOnboarding} />;
+  // Resolve session before intro so logged-in users go straight in
   if (authLoading) return <div className="inhand-loading">Loading your account...</div>;
+  if (!onboardingDone && !authUser) return <OnboardingScreen onComplete={completeOnboarding} />;
   if (!supabase) {
     return (
       <div className="inhand-config-required">
