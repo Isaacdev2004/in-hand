@@ -9,7 +9,8 @@ const config: CapacitorConfig = {
     iosScheme: "https",
   },
   ios: {
-    contentInset: "automatic",
+    // Let CSS env(safe-area-inset-*) own the insets — "automatic" letterboxes the WebView
+    contentInset: "never",
     scrollEnabled: true,
     backgroundColor: "#f4f6f8",
   },
@@ -17,13 +18,13 @@ const config: CapacitorConfig = {
     SplashScreen: {
       launchShowDuration: 1800,
       launchAutoHide: true,
-      backgroundColor: "#15202b",
+      backgroundColor: "#f4f6f8",
       androidSplashResourceName: "splash",
       showSpinner: false,
     },
     StatusBar: {
-      style: "LIGHT",
-      backgroundColor: "#15202b",
+      style: "DARK",
+      backgroundColor: "#f4f6f8",
     },
     Keyboard: {
       resize: "native",

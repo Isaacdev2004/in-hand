@@ -3661,7 +3661,7 @@ function AppShell({ onSignOut, authUser }) {
     dbRef.current = db;
   }, [db]);
   const [dbLoaded, setDbLoaded] = useState(false);
-  const [tab, setTab] = useState("browse");
+  const [tab, setTab] = useState("account");
   useEffect(() => {
     const onNavigate = (e) => {
       const next = e?.detail?.tab;

@@ -50,10 +50,10 @@ export async function initCapacitor() {
   document.body.classList.add("capacitor-native");
 
   try {
-    await StatusBar.setStyle({ style: Style.Light });
-    if (Capacitor.getPlatform() === "ios") {
-      await StatusBar.setOverlaysWebView({ overlay: false });
-    }
+    // Edge-to-edge: draw under status bar; CSS safe-area insets pad content
+    await StatusBar.setOverlaysWebView({ overlay: true });
+    await StatusBar.setStyle({ style: Style.Dark });
+    await StatusBar.setBackgroundColor({ color: "#f4f6f8" });
   } catch (e) {
     console.warn("In Hand: StatusBar init skipped", e);
   }
