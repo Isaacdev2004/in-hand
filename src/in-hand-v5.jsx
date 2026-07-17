@@ -458,12 +458,12 @@ function ListingDetailView({ card, owner, myVault, onBack, onSendProposal, onBuy
 
   return (
     <div className="inhand-listing-detail" style={{ flex: 1, display: "flex", flexDirection: "column", overflowY: "auto", paddingBottom: 100 }}>
-      <div style={{ background: "linear-gradient(160deg,#1a2a3a 0%,#2C3E50 40%,#3A7BD5 100%)", minHeight: 280, display: "flex", alignItems: "center", justifyContent: "center", position: "relative", flexShrink: 0 }}>
-        <button type="button" onClick={onBack} style={{ position: "absolute", top: 20, left: 16, background: "rgba(255,255,255,0.15)", border: "none", borderRadius: "50%", width: 36, height: 36, color: "#fff", fontSize: 16, cursor: "pointer" }}>←</button>
-        <div onClick={card.photos?.length ? onOpenPhotos : undefined} style={{ cursor: card.photos?.length ? "pointer" : "default" }}>
+      <div className="inhand-listing-detail-hero" style={{ background: "linear-gradient(160deg,#1a2a3a 0%,#2C3E50 40%,#3A7BD5 100%)", minHeight: 300, display: "flex", alignItems: "center", justifyContent: "center", position: "relative", flexShrink: 0, paddingTop: "calc(12px + env(safe-area-inset-top, 0px))" }}>
+        <button type="button" onClick={onBack} aria-label="Back" style={{ position: "absolute", top: "calc(14px + env(safe-area-inset-top, 0px))", left: 16, background: "rgba(255,255,255,0.15)", border: "none", borderRadius: "50%", width: 36, height: 36, color: "#fff", fontSize: 16, cursor: "pointer", zIndex: 2 }}>←</button>
+        <div onClick={card.photos?.length ? onOpenPhotos : undefined} style={{ cursor: card.photos?.length ? "pointer" : "default", marginTop: 8 }}>
           <FigureImage card={card} size={120} borderRadius={20} onVideoOpen={onOpenVideo} />
         </div>
-        <div style={{ position: "absolute", top: 20, right: 16, display: "flex", flexDirection: "column", gap: 6 }}>
+        <div style={{ position: "absolute", top: "calc(14px + env(safe-area-inset-top, 0px))", right: 16, display: "flex", flexDirection: "column", gap: 6, zIndex: 2 }}>
           {card.wantsTrade && <div style={{ background: "#00b894", borderRadius: 20, padding: "3px 10px", fontSize: 9, fontWeight: 800, color: "#fff" }}>TRADE</div>}
           {card.wantsBuy && <div style={{ background: "#3A7BD5", borderRadius: 20, padding: "3px 10px", fontSize: 9, fontWeight: 800, color: "#fff" }}>BUY</div>}
         </div>
@@ -495,8 +495,8 @@ function ListingDetailView({ card, owner, myVault, onBack, onSendProposal, onBuy
         </div>
       </div>
 
-      <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 430, background: "#fff", borderTop: "1px solid #E4EBF2", padding: "14px 20px calc(14px + env(safe-area-inset-bottom, 0px))", zIndex: 50 }}>
-        <div style={{ display: "flex", gap: 10 }}>
+      <div className="inhand-listing-detail-actions" style={{ position: "fixed", bottom: 0, left: 0, right: 0, width: "100%", background: "#fff", borderTop: "1px solid #E4EBF2", padding: "14px 20px calc(14px + env(safe-area-inset-bottom, 0px))", zIndex: 50 }}>
+        <div style={{ display: "flex", gap: 10, maxWidth: 560, margin: "0 auto" }}>
           {card.wantsTrade && <button type="button" onClick={() => setSheet("trade")} style={{ flex: 1, background: "#EAF1FA", border: "2px solid #3A7BD5", borderRadius: 14, padding: "13px", fontWeight: 800, fontSize: 14, color: "#3A7BD5", cursor: "pointer" }}>⇄ Trade</button>}
           {card.wantsBuy && <button type="button" onClick={() => { onBuy(); }} style={{ flex: 2, background: "#2C3E50", border: "none", borderRadius: 14, padding: "13px", fontWeight: 800, fontSize: 14, color: "#fff", cursor: "pointer" }}>Buy ${card.value}</button>}
           <button type="button" onClick={() => setSheet("msg")} style={{ width: 50, background: "#EEF2F7", border: "none", borderRadius: 14, padding: "13px", fontSize: 17, cursor: "pointer" }}>💬</button>
