@@ -10,6 +10,30 @@ function profileFromRow(row) {
   };
 }
 
+/** Lightweight profile from Auth user when DB profile fetch is slow/unavailable. */
+export function profileFromAuthUser(user) {
+  if (!user?.id) return null;
+  const username =
+    user.user_metadata?.username ||
+    user.email?.split("@")[0] ||
+    "Collector";
+  return {
+    id: user.id,
+    username,
+    avatar: user.user_metadata?.avatar || username.slice(0, 2).toUpperCase(),
+    verified: !!user.user_metadata?.verified,
+  };
+}
+
+function withTimeout(promise, ms, label = "timeout") {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      setTimeout(() => reject(new Error(label)), ms);
+    }),
+  ]);
+}
+
 export async function ensureUserProfile(user) {
   if (!supabase || !user?.id) return null;
 
@@ -46,6 +70,33 @@ export async function ensureUserProfile(user) {
   if (insertError) throw insertError;
 
   return profileFromRow(row);
+}
+
+/**
+ * Resolve session + profile with timeouts so iOS cold start never hangs
+ * on "Loading your account…".
+ */
+export async function resolveAuthBootstrap(timeoutMs = 4500) {
+  if (!supabase) return null;
+
+  const {
+    data: { session },
+    error,
+  } = await withTimeout(supabase.auth.getSession(), timeoutMs, "getSession timeout");
+
+  if (error) throw error;
+  if (!session?.user) return null;
+
+  try {
+    return await withTimeout(
+      ensureUserProfile(session.user),
+      timeoutMs,
+      "ensureUserProfile timeout",
+    );
+  } catch (err) {
+    console.warn("In Hand: profile fetch slow/failed, using auth fallback", err);
+    return profileFromAuthUser(session.user);
+  }
 }
 
 export async function loadSessionProfile() {

@@ -38,7 +38,7 @@ import {
 import { startStripeCheckout } from "./lib/stripeCheckout";
 import { createShippingLabel } from "./lib/shippoLabel";
 import { fetchEbayMarketValue, getCachedMarketValue } from "./lib/ebayMarketValue";
-import { ensureUserProfile } from "./lib/authSession";
+import { ensureUserProfile, profileFromAuthUser, resolveAuthBootstrap } from "./lib/authSession";
 import { updateOwnUser } from "./lib/usersApi";
 import {
   BellIcon,
@@ -3551,31 +3551,86 @@ export default function InHand() {
     }
 
     let cancelled = false;
+    let bootstrapped = false;
 
-    // Single path for session + profile: onAuthStateChange runs immediately with current session.
-    // Avoid a parallel loadSessionProfile() IIFE — React Strict Mode cleanup could set cancelled
-    // before that IIFE’s finally ran, leaving authLoading true forever ("Loading your account…").
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    const applySession = async (session) => {
+      if (cancelled) return;
       if (!session?.user) {
-        if (!cancelled) setAuthUser(null);
+        setAuthUser(null);
         setAuthLoading(false);
         return;
       }
       try {
-        const profile = await ensureUserProfile(session.user);
-        if (!cancelled) setAuthUser(profile);
+        // Never await heavy work inside the auth callback path without a timeout —
+        // iOS cold start can hang here until the app is backgrounded.
+        const profile = await Promise.race([
+          ensureUserProfile(session.user),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("profile timeout")), 4500),
+          ),
+        ]);
+        if (!cancelled && profile) setAuthUser(profile);
       } catch (err) {
-        console.error("In Hand: profile sync failed", err);
+        console.warn("In Hand: profile sync slow/failed, using auth fallback", err);
+        if (!cancelled) setAuthUser(profileFromAuthUser(session.user));
       } finally {
-        setAuthLoading(false);
+        if (!cancelled) setAuthLoading(false);
       }
+    };
+
+    // Explicit cold-start read — do not rely only on onAuthStateChange
+    (async () => {
+      try {
+        const profile = await resolveAuthBootstrap(4500);
+        if (cancelled) return;
+        bootstrapped = true;
+        if (profile) setAuthUser(profile);
+        else setAuthUser(null);
+      } catch (err) {
+        console.error("In Hand: auth bootstrap failed", err);
+        if (!cancelled) setAuthUser(null);
+      } finally {
+        if (!cancelled) setAuthLoading(false);
+      }
+    })();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      // INITIAL_SESSION is covered by resolveAuthBootstrap; still handle sign-in/out/token refresh
+      if (event === "INITIAL_SESSION" && bootstrapped) return;
+      // Defer so we never block the auth client lock
+      setTimeout(() => {
+        void applySession(session);
+      }, 0);
     });
+
+    // Hard ceiling — never leave users on "Loading your account…" forever
+    const safety = setTimeout(() => {
+      if (!cancelled) setAuthLoading(false);
+    }, 7000);
+
+    const onResume = () => {
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session?.user) void applySession(session);
+        else if (!cancelled) setAuthLoading(false);
+      }).catch(() => {
+        if (!cancelled) setAuthLoading(false);
+      });
+    };
+
+    window.addEventListener("inhand:app-resume", onResume);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") onResume();
+    };
+    document.addEventListener("visibilitychange", onVisible);
 
     return () => {
       cancelled = true;
+      clearTimeout(safety);
       subscription.unsubscribe();
+      window.removeEventListener("inhand:app-resume", onResume);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, []);
 

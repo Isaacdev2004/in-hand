@@ -43,6 +43,28 @@ async function handleIncomingUrl(url) {
   }
 }
 
+function forceLayoutRefresh() {
+  try {
+    window.dispatchEvent(new Event("resize"));
+    document.documentElement.style.height = "100%";
+    document.body.style.height = "100%";
+    // Nudge WKWebView to paint after cold start / resume
+    requestAnimationFrame(() => {
+      window.scrollTo(0, 0);
+    });
+  } catch {
+    /* ignore */
+  }
+}
+
+async function hideSplashSafe() {
+  try {
+    await SplashScreen.hide({ fadeOutDuration: 200 });
+  } catch (e) {
+    console.warn("In Hand: SplashScreen hide skipped", e);
+  }
+}
+
 export async function initCapacitor() {
   if (!Capacitor.isNativePlatform()) return;
 
@@ -58,11 +80,14 @@ export async function initCapacitor() {
     console.warn("In Hand: StatusBar init skipped", e);
   }
 
-  try {
-    await SplashScreen.hide();
-  } catch (e) {
-    console.warn("In Hand: SplashScreen hide skipped", e);
-  }
+  // Hide splash ASAP so a stuck auth load isn't covered forever
+  await hideSplashSafe();
+  forceLayoutRefresh();
+  // Second hide after first paint — iOS sometimes ignores the first call on cold start
+  setTimeout(() => {
+    hideSplashSafe();
+    forceLayoutRefresh();
+  }, 400);
 
   try {
     Keyboard.addListener("keyboardWillShow", () => {
@@ -81,6 +106,14 @@ export async function initCapacitor() {
     if (launch?.url) await handleIncomingUrl(launch.url);
     App.addListener("appUrlOpen", (event) => {
       handleIncomingUrl(event.url);
+    });
+
+    // Background → foreground: re-paint + let React re-check session
+    App.addListener("appStateChange", ({ isActive }) => {
+      if (!isActive) return;
+      forceLayoutRefresh();
+      hideSplashSafe();
+      window.dispatchEvent(new CustomEvent("inhand:app-resume"));
     });
   } catch (e) {
     console.warn("In Hand: App URL listeners skipped", e);
