@@ -2706,7 +2706,7 @@ function EmailTemplatePreview({ template }) {
         <div key={i} style={{ borderTop:"1px solid #E4EBF2", paddingTop:16, textAlign:"center" }}>
           <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:8, marginBottom:8 }}>
             <div style={{ width:28, height:28, borderRadius:8, overflow:"hidden", background:"#1a1d21" }}>
-              <img src={LOGO_IMG} alt="In Hand" style={{ width:"100%", height:"100%", objectFit:"contain" }} />
+              <img src={LOGO_IMG} alt="in-HAND™" style={{ width:"100%", height:"100%", objectFit:"contain" }} />
             </div>
             <span style={{ fontWeight:900, fontSize:15, color:"#2C3E50" }}>In <span style={{ color:"#3A7BD5" }}>Hand</span></span>
           </div>
@@ -2738,7 +2738,7 @@ function EmailTemplatePreview({ template }) {
         <div style={{ background:"#2C3E50", padding:"20px", textAlign:"center" }}>
           <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:10 }}>
             <div style={{ width:32, height:32, borderRadius:8, overflow:"hidden", background:"#1a1d21" }}>
-              <img src={LOGO_IMG} alt="In Hand" style={{ width:"100%", height:"100%", objectFit:"contain" }} />
+              <img src={LOGO_IMG} alt="in-HAND™" style={{ width:"100%", height:"100%", objectFit:"contain" }} />
             </div>
             <span style={{ fontWeight:900, fontSize:18, color:"#fff" }}>In <span style={{ color:"#3A7BD5" }}>Hand</span></span>
           </div>
@@ -2918,8 +2918,8 @@ function AuthScreen({ onAuth }) {
 
       {/* Logo */}
       <div style={{ textAlign:"center", marginBottom:40, animation:"fadeUp 0.4s ease" }}>
-        <div style={{ width:110, height:110, borderRadius:28, overflow:"hidden", margin:"0 auto 16px", boxShadow:"0 8px 32px rgba(0,0,0,0.25)", background:"#1a1d21" }}>
-              <img src={LOGO_IMG} alt="In Hand" style={{ width:"100%", height:"100%", objectFit:"contain" }} />
+        <div style={{ width:124, height:124, borderRadius:30, overflow:"hidden", margin:"0 auto 16px", boxShadow:"0 8px 32px rgba(0,0,0,0.25)", background:"#1a1d21" }}>
+              <img src={LOGO_IMG} alt="in-HAND™" style={{ width:"100%", height:"100%", objectFit:"contain" }} />
             </div>
         <div style={{ fontSize:12, color:"#bbb", fontWeight:600, marginTop:4, letterSpacing:1 }}>ACTION FIGURE EXCHANGE</div>
       </div>
@@ -3457,8 +3457,8 @@ function OnboardingScreen({ onComplete }) {
   return (
     <div className="inhand-onboarding">
       <div style={{ padding:"20px 24px 0", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-        <div className="inhand-brand-logo" style={{ width:40, height:40 }}>
-          <img src={LOGO_IMG} alt="In Hand" />
+        <div className="inhand-brand-logo" style={{ width:52, height:52 }}>
+          <img src={LOGO_IMG} alt="in-HAND™" />
         </div>
         <button type="button" onClick={onComplete} className="inhand-onboarding-cta" style={{ width:"auto", padding:"8px 14px", fontSize:12 }}>Skip</button>
       </div>
@@ -5020,7 +5020,7 @@ function AppShell({ onSignOut, authUser }) {
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
           <div className="inhand-brand-lockup">
             <div className="inhand-brand-logo">
-              <img src={LOGO_IMG} alt="In Hand" />
+              <img src={LOGO_IMG} alt="in-HAND™" />
             </div>
             <div className="inhand-brand-copy">
               <div className="inhand-brand-title">In Hand</div>
