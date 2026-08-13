@@ -411,12 +411,25 @@ const WORDS = [
   { text:"TRADE", color:"#4A90D9" }, { text:"COLLECT", color:"#2980B9" }, { text:"OBSESS", color:"#5B8DD9" },
 ];
 function CyclingSubtitle() {
-  const [idx, setIdx] = useState(0); const [key, setKey] = useState(0);
-  useEffect(() => { const t = setInterval(() => { setIdx(i=>(i+1)%WORDS.length); setKey(k=>k+1); }, 2400); return ()=>clearInterval(t); }, []);
+  const [idx, setIdx] = useState(0);
+  const [key, setKey] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => {
+      setIdx((i) => (i + 1) % WORDS.length);
+      setKey((k) => k + 1);
+    }, 2400);
+    return () => clearInterval(t);
+  }, []);
   return (
-    <div style={{ display:"flex", alignItems:"center", gap:5, height:16, overflow:"hidden" }}>
-      <span>Collector marketplace</span>
-      <span key={key} className="cycle-word" style={{ fontSize:9, fontWeight:900, color:WORDS[idx].color, letterSpacing:2 }}>{WORDS[idx].text}</span>
+    <div className="inhand-brand-subtitle">
+      <span className="inhand-brand-subtitle-label">Collector marketplace</span>
+      <span
+        key={key}
+        className="cycle-word"
+        style={{ color: WORDS[idx].color }}
+      >
+        {WORDS[idx].text}
+      </span>
     </div>
   );
 }
@@ -4847,11 +4860,6 @@ function AppShell({ onSignOut, authUser }) {
 
   return (
     <div className="inhand-shell">
-      <style>{`
-        @keyframes wordSlideUp{0%{opacity:0;transform:translateY(8px)}15%{opacity:1;transform:translateY(0)}75%{opacity:1;transform:translateY(0)}90%{opacity:0;transform:translateY(-8px)}100%{opacity:0;transform:translateY(-8px)}}
-        .cycle-word{display:inline-block;animation:wordSlideUp 2.4s ease-in-out infinite;}
-      `}</style>
-
       {toast && <div className="inhand-toast">{toast}</div>}
       {showAddCard && <AddCardModal ownerId={activeUserId} onSave={handleAddCard} onClose={()=>setShowAddCard(false)} />}
       {showAddUser && <AddUserModal onSave={handleAddUser} onClose={()=>setShowAddUser(false)} />}

@@ -283,6 +283,7 @@ html.capacitor-native.keyboard-open .inhand-bottom-nav {
   align-items: center;
   gap: 12px;
   min-width: 0;
+  flex: 1;
 }
 
 .inhand-brand-logo {
@@ -304,6 +305,12 @@ html.capacitor-native.keyboard-open .inhand-bottom-nav {
 
 .inhand-brand-copy {
   min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  overflow: hidden;
 }
 
 .inhand-brand-title {
@@ -311,15 +318,45 @@ html.capacitor-native.keyboard-open .inhand-bottom-nav {
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1.2;
+  white-space: nowrap;
 }
 
 .inhand-brand-subtitle {
-  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 16px;
+  max-width: 100%;
+  overflow: hidden;
+  margin: 0;
   font-size: 11px;
+  line-height: 1.2;
   color: var(--ih-text-soft);
+}
+
+.inhand-brand-subtitle-label {
+  flex: 1;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.cycle-word {
+  flex-shrink: 0;
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 1.5px;
+  line-height: 1;
+  animation: wordFade 2.4s ease-in-out;
+}
+
+@keyframes wordFade {
+  0% { opacity: 0; transform: translateY(4px); }
+  18% { opacity: 1; transform: translateY(0); }
+  78% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-2px); }
 }
 
 .inhand-header-actions {
