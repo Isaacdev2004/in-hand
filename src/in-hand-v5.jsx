@@ -1215,21 +1215,61 @@ function PhotoViewer({ photos, startIdx = 0, onClose }) {
   );
 }
 
-// ─── ADD CARD MODAL ───────────────────────────────────────────────────────────
-function AddCardModal({ onSave, onClose, ownerId }) {
-  const [form, setForm] = useState({ name:"", brand:"Hasbro", line:"G.I. Joe", isNew:true, value:"", image:"🥷", photos:[], tags:"", description:"", videoUrl:"", wantsTrade:true, wantsBuy:false });
-  const set = (k,v) => setForm(f => {
-    const updated = {...f, [k]:v};
+// ─── ADD / EDIT CARD MODAL ────────────────────────────────────────────────────
+function AddCardModal({ onSave, onClose, ownerId, initialCard = null }) {
+  const isEdit = !!initialCard;
+  const [form, setForm] = useState(() => {
+    if (!initialCard) {
+      return {
+        name: "", brand: "Hasbro", line: "G.I. Joe", isNew: true, value: "",
+        image: "🥷", photos: [], tags: "", description: "", videoUrl: "",
+        wantsTrade: true, wantsBuy: false,
+      };
+    }
+    return {
+      name: initialCard.name || "",
+      brand: initialCard.brand || "Hasbro",
+      line: initialCard.line || "G.I. Joe",
+      isNew: !!initialCard.isNew,
+      value: String(initialCard.value ?? ""),
+      image: initialCard.image || "🥷",
+      photos: Array.isArray(initialCard.photos) ? [...initialCard.photos] : [],
+      tags: (initialCard.tags || []).join(", "),
+      description: initialCard.description || "",
+      videoUrl: initialCard.videoUrl || "",
+      wantsTrade: !!initialCard.wantsTrade,
+      wantsBuy: !!initialCard.wantsBuy,
+    };
+  });
+  const set = (k, v) => setForm((f) => {
+    const updated = { ...f, [k]: v };
     if (k === "brand") updated.line = getLinesForBrand(v)[0] || "";
     return updated;
   });
+
+  const submit = () => {
+    if (!form.name || !form.value) return;
+    const payload = {
+      ...form,
+      value: parseInt(form.value, 10),
+      tags: form.tags.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean),
+      videoUrl: (form.videoUrl || "").trim(),
+      ownerId: isEdit ? initialCard.ownerId : ownerId,
+      id: isEdit ? initialCard.id : "c" + Date.now(),
+      listedAt: isEdit
+        ? initialCard.listedAt
+        : new Date().toISOString().split("T")[0],
+    };
+    onSave(payload, { isEdit });
+    onClose();
+  };
 
   return (
     <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:500, display:"flex", alignItems:"flex-end", justifyContent:"center" }}>
       <div style={{ background:"#fff", borderRadius:"24px 24px 0 0", padding:"24px 20px 36px", width:"100%", maxWidth:430, maxHeight:"92vh", overflowY:"auto" }}>
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:20 }}>
-          <div style={{ fontWeight:800, fontSize:18, color:"#2C3E50" }}>Add to Vault</div>
-          <button onClick={onClose} style={{ background:"#E4EBF2", border:"none", borderRadius:"50%", width:32, height:32, fontSize:16, cursor:"pointer" }}>✕</button>
+          <div style={{ fontWeight:800, fontSize:18, color:"#2C3E50" }}>{isEdit ? "Edit listing" : "Add to Vault"}</div>
+          <button type="button" onClick={onClose} style={{ background:"#E4EBF2", border:"none", borderRadius:"50%", width:32, height:32, fontSize:16, cursor:"pointer" }}>✕</button>
         </div>
 
         {/* Photo upload */}
@@ -1311,7 +1351,22 @@ function AddCardModal({ onSave, onClose, ownerId }) {
             <label style={TS(form.wantsBuy)} onClick={()=>set("wantsBuy",!form.wantsBuy)}>💰 For Sale</label>
           </div>
         </div>
-        <Btn onClick={()=>{ if(!form.name||!form.value) return; onSave({...form, value:parseInt(form.value), tags:form.tags.split(",").map(t=>t.trim().toLowerCase()).filter(Boolean), id:"c"+Date.now(), ownerId: ownerId, listedAt:new Date().toISOString().split("T")[0], videoUrl:(form.videoUrl||"").trim()}); onClose(); }} style={{ background:"#2C3E50", color:"#fff", width:"100%", marginTop:16 }}>Save Figure</Btn>
+        <Btn onClick={submit} style={{ background:"#2C3E50", color:"#fff", width:"100%", marginTop:16 }}>
+          {isEdit ? "Save changes" : "Save Figure"}
+        </Btn>
+        {isEdit && (
+          <button
+            type="button"
+            onClick={() => {
+              if (!window.confirm("Remove this figure from your vault?")) return;
+              onSave({ id: initialCard.id, _delete: true }, { isEdit: true, isDelete: true });
+              onClose();
+            }}
+            style={{ width:"100%", marginTop:10, background:"#fff0f0", border:"none", borderRadius:12, padding:"12px", fontWeight:700, fontSize:13, color:"#ff6b6b", cursor:"pointer", fontFamily:UI_FONT }}
+          >
+            Remove from vault
+          </button>
+        )}
       </div>
     </div>
   );
@@ -3748,6 +3803,7 @@ function AppShell({ onSignOut, authUser }) {
   const [counterTopupFor, setCounterTopupFor] = useState(null);
   const [toast, setToast] = useState(null);
   const [showAddCard, setShowAddCard] = useState(false);
+  const [editingCard, setEditingCard] = useState(null);
   const [showAddUser, setShowAddUser] = useState(false);
   const [checkoutCard, setCheckoutCard] = useState(null);
   const [trackingModal, setTrackingModal] = useState(null);
@@ -4426,6 +4482,65 @@ function AppShell({ onSignOut, authUser }) {
     notify("✅ Figure added!");
   };
 
+  const handleUpdateCard = async (card) => {
+    if (supabase) {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) {
+          notify("❌ Sign in again to update your listing.");
+          return;
+        }
+        const photos = await resolveListingPhotosForSave(
+          card.photos,
+          user.id,
+          card.id
+        );
+        const patch = {
+          name: card.name,
+          brand: card.brand,
+          line: card.line,
+          isNew: card.isNew,
+          value: card.value,
+          image: photos[0] || card.image,
+          photos,
+          tags: card.tags,
+          description: card.description || null,
+          wantsTrade: card.wantsTrade,
+          wantsBuy: card.wantsBuy,
+          videoUrl: card.videoUrl || null,
+        };
+        const { error } = await updateListing(card.id, patch);
+        if (error) throw error;
+        card = { ...card, ...patch };
+      } catch (e) {
+        console.error("In Hand: update listing failed", e);
+        notify(`❌ ${formatListingSaveError(e)}`);
+        return;
+      }
+    }
+    setDb((d) => ({
+      ...d,
+      cards: d.cards.map((c) => (c.id === card.id ? { ...c, ...card } : c)),
+    }));
+    notify("✅ Listing updated");
+  };
+
+  const handleSaveVaultCard = async (card, opts = {}) => {
+    if (opts.isDelete || card?._delete) {
+      await handleDeleteCard(card.id);
+      setEditingCard(null);
+      return;
+    }
+    if (opts.isEdit) {
+      await handleUpdateCard(card);
+      setEditingCard(null);
+      return;
+    }
+    await handleAddCard(card);
+  };
+
   const handleDeleteCard = async (cardId) => {
     if (supabase) {
       const { error } = await deleteListing(cardId);
@@ -4861,7 +4976,14 @@ function AppShell({ onSignOut, authUser }) {
   return (
     <div className="inhand-shell">
       {toast && <div className="inhand-toast">{toast}</div>}
-      {showAddCard && <AddCardModal ownerId={activeUserId} onSave={handleAddCard} onClose={()=>setShowAddCard(false)} />}
+      {(showAddCard || editingCard) && (
+        <AddCardModal
+          ownerId={activeUserId}
+          initialCard={editingCard}
+          onSave={handleSaveVaultCard}
+          onClose={() => { setShowAddCard(false); setEditingCard(null); }}
+        />
+      )}
       {showAddUser && <AddUserModal onSave={handleAddUser} onClose={()=>setShowAddUser(false)} />}
       {checkoutCard && <CheckoutModal card={checkoutCard} seller={getUser(checkoutCard.ownerId)} onPayWithCard={()=>handlePurchaseWithCard(checkoutCard)} onClose={()=>setCheckoutCard(null)} />}
       {marketModal && <MarketValueModal card={marketModal} onClose={()=>setMarketModal(null)} />}
@@ -5692,6 +5814,13 @@ function AppShell({ onSignOut, authUser }) {
                 <div style={{ display:"flex",gap:6,marginTop:5 }}><span style={{ fontSize:10,fontWeight:800,background:condBg(fig.isNew),color:condColor(fig.isNew),borderRadius:6,padding:"2px 8px" }}>{condLabel(fig.isNew)}</span><span style={{ fontWeight:800,fontSize:13,color:from }}>${fig.value}</span></div>
               </div>
               <div style={{ display:"flex", flexDirection:"column", alignItems:"stretch", gap:6, minWidth:72 }}>
+                <button
+                  type="button"
+                  onClick={() => setEditingCard(fig)}
+                  style={{ background:"#2C3E50", border:"none", borderRadius:8, padding:"6px 8px", fontSize:10, fontWeight:800, color:"#fff", cursor:"pointer", whiteSpace:"nowrap", display:"flex", alignItems:"center", justifyContent:"center", gap:4 }}
+                >
+                  <span aria-hidden="true">✏️</span> Edit
+                </button>
                 <button type="button" onClick={()=>handleToggleListing(fig.id,"wantsTrade")} style={{ background:fig.wantsTrade?"#e8fff6":"#EEF2F7", border:"none", borderRadius:8, padding:"5px 6px", fontSize:9, fontWeight:700, color:fig.wantsTrade?"#00b894":"#888", cursor:"pointer" }}>{fig.wantsTrade?"⇄ Trade on":"⇄ Trade off"}</button>
                 <button type="button" onClick={()=>handleToggleListing(fig.id,"wantsBuy")} style={{ background:fig.wantsBuy?"#fff8e6":"#EEF2F7", border:"none", borderRadius:8, padding:"5px 6px", fontSize:9, fontWeight:700, color:fig.wantsBuy?"#f0932b":"#888", cursor:"pointer" }}>{fig.wantsBuy?"💰 Sale on":"💰 Sale off"}</button>
                 <button type="button" onClick={()=>setEditingPhotos(fig.id)} style={{ background:"#EAF1FA", border:"none", borderRadius:8, padding:"4px 8px", fontSize:9, fontWeight:700, color:"#3A7BD5", cursor:"pointer", whiteSpace:"nowrap" }}>
