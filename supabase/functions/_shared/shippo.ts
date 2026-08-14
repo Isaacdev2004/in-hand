@@ -1,4 +1,4 @@
-import { getShippingRate } from "./pricing.ts";
+import { getShippingRate, type ShippingRate } from "./pricing.ts";
 
 export type ShippoAddress = {
   name: string;
@@ -9,8 +9,8 @@ export type ShippoAddress = {
   country?: string;
 };
 
-export function parcelForFigureValue(value: number) {
-  const rate = getShippingRate(value);
+export function parcelForFigureValue(value: number, rates?: ShippingRate[]) {
+  const rate = getShippingRate(value, rates);
   if (rate.label.includes("Small")) {
     return {
       length: "8.6875",

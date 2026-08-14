@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { loadShippingRatesFromDb } from "../_shared/pricing.ts";
 import {
   parcelForFigureValue,
   pickDefaultAddress,
@@ -97,7 +98,8 @@ Deno.serve(async (req) => {
     };
 
     const figureValue = Number(shipment.figure_value) || 50;
-    const parcel = parcelForFigureValue(figureValue);
+    const rates = await loadShippingRatesFromDb(supabase);
+    const parcel = parcelForFigureValue(figureValue, rates);
 
     type ShipmentRes = {
       rates: Array<{

@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import Stripe from "https://esm.sh/stripe@14.25.0?target=deno";
-import { computePurchaseTotals } from "../_shared/pricing.ts";
+import { computePurchaseTotals, loadShippingRatesFromDb } from "../_shared/pricing.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -87,8 +87,9 @@ Deno.serve(async (req) => {
     }
 
     const value = Number(listing.value);
+    const rates = await loadShippingRatesFromDb(supabase);
     const { fee, shipping, insurance, shippingLabel, grandTotal, net } =
-      computePurchaseTotals(value);
+      computePurchaseTotals(value, rates);
 
     const stripe = new Stripe(stripeKey, {
       apiVersion: "2023-10-16",

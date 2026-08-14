@@ -26,6 +26,7 @@ export function userFromRow(r) {
     addresses: r.addresses || [],
     flagCount: r.flag_count ?? 0,
     verified: !!r.verified,
+    isAdmin: !!r.is_admin,
   };
 }
 

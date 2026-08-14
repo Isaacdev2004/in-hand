@@ -38,6 +38,12 @@ import {
 import { startStripeCheckout } from "./lib/stripeCheckout";
 import { createShippingLabel } from "./lib/shippoLabel";
 import { fetchEbayMarketValue, getCachedMarketValue } from "./lib/ebayMarketValue";
+import {
+  fetchShippingRates,
+  getInsuranceCost,
+  getShippingRate,
+  saveShippingRates,
+} from "./lib/shippingRates";
 import { ensureUserProfile, profileFromAuthUser, resolveAuthBootstrap } from "./lib/authSession";
 import { updateOwnUser } from "./lib/usersApi";
 import {
@@ -327,17 +333,6 @@ function MarketValueModal({ card, onClose }) {
 const SEED_USERS = [];
 const SEED_CARDS = [];
 const SEED_TRANSACTIONS = [];
-
-// USPS Ground shipping rates by value (flat rate boxes)
-const USPS_RATES = [
-  { maxValue: 50,   label: "Small Flat Rate Box",  price: 9.45,  insurance: 0    },
-  { maxValue: 100,  label: "Medium Flat Rate Box", price: 14.65, insurance: 0    },
-  { maxValue: 500,  label: "Large Flat Rate Box",  price: 19.95, insurance: 2.75 },
-  { maxValue: 99999,label: "Large Flat Rate Box",  price: 19.95, insurance: 4.95 },
-];
-const INSURANCE_THRESHOLD = 100; // USPS includes $100 free — charge for above
-const getShippingRate = (value) => USPS_RATES.find(r => value <= r.maxValue);
-const getInsuranceCost = (value) => value > INSURANCE_THRESHOLD ? (USPS_RATES.find(r=>value<=r.maxValue)?.insurance||2.75) : 0;
 
 const SEED_SHIPMENTS = [];
 const SEED_DISPUTES = [];
@@ -3785,6 +3780,8 @@ function AppShell({ onSignOut, authUser }) {
   }, [db]);
   const [dbLoaded, setDbLoaded] = useState(false);
   const [tab, setTab] = useState("account");
+  const [uspsRates, setUspsRates] = useState(() => getCachedShippingRates());
+  const [ratesSaving, setRatesSaving] = useState(false);
   useEffect(() => {
     const onNavigate = (e) => {
       const next = e?.detail?.tab;
@@ -3899,6 +3896,33 @@ function AppShell({ onSignOut, authUser }) {
           ],
         }));
       }
+    }
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const rates = await fetchShippingRates();
+        if (!cancelled) setUspsRates(rates);
+      } catch (e) {
+        console.warn("In Hand: shipping rates load failed, using defaults", e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const saveUspsRates = async () => {
+    setRatesSaving(true);
+    try {
+      const { error } = await saveShippingRates(uspsRates);
+      if (error) throw error;
+      notify("✅ Shipping rates saved");
+    } catch (e) {
+      console.error("In Hand: save shipping rates failed", e);
+      notify("❌ Could not save rates (admin access required)");
+    } finally {
+      setRatesSaving(false);
     }
   };
 
@@ -5365,11 +5389,11 @@ function AppShell({ onSignOut, authUser }) {
           {/* USPS rates info card */}
           <div style={{ background:"linear-gradient(135deg,#2C3E50,#2d3561)",borderRadius:20,padding:"18px",marginBottom:20 }}>
             <div style={{ fontWeight:800,fontSize:13,color:"#fff",marginBottom:12 }}>📮 USPS Ground Advantage Rates</div>
-            {USPS_RATES.map((r,i)=>(
-              <div key={i} style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,paddingBottom:8,borderBottom:i<USPS_RATES.length-1?"1px solid rgba(255,255,255,0.1)":"none" }}>
+            {uspsRates.map((r,i)=>(
+              <div key={i} style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,paddingBottom:8,borderBottom:i<uspsRates.length-1?"1px solid rgba(255,255,255,0.1)":"none" }}>
                 <div>
                   <div style={{ fontSize:12,color:"rgba(255,255,255,0.9)",fontWeight:600 }}>{r.label}</div>
-                  <div style={{ fontSize:10,color:"rgba(255,255,255,0.4)" }}>Items up to ${i===USPS_RATES.length-1?"any value":r.maxValue}</div>
+                  <div style={{ fontSize:10,color:"rgba(255,255,255,0.4)" }}>Items up to ${i===uspsRates.length-1?"any value":r.maxValue}</div>
                 </div>
                 <div style={{ fontWeight:900,fontSize:15,color:"#00b894" }}>${r.price.toFixed(2)}</div>
               </div>
@@ -5863,7 +5887,7 @@ function AppShell({ onSignOut, authUser }) {
             ))}
           </div>
           <div style={{ display:"flex",background:"#DCE6F0",borderRadius:12,padding:4,gap:2,marginBottom:16 }}>
-            {[["users","👥 Users"],["cards","🤖 Figures"],["txns","💸 Txns"],["disputes","🚨 Disputes"]].map(([id,label])=>(
+            {[["users","👥 Users"],["cards","🤖 Figures"],["txns","💸 Txns"],["disputes","🚨 Disputes"],["rates","📦 Rates"]].map(([id,label])=>(
               <button key={id} onClick={()=>setAdminView(id)} style={{ flex:1,background:adminView===id?"#fff":"transparent",border:"none",borderRadius:8,padding:"7px 2px",fontSize:10,fontWeight:adminView===id?800:600,color:adminView===id?"#2C3E50":"#aaa",cursor:"pointer" }}>{label}</button>
             ))}
           </div>
@@ -5994,6 +6018,46 @@ function AppShell({ onSignOut, authUser }) {
               }
             </div>
           )}
+          {adminView==="rates" && (
+            <div>
+              <div style={{ fontWeight:800, fontSize:15, color:"#2C3E50", marginBottom:6 }}>Shipping rates</div>
+              <div style={{ fontSize:12, color:"#888", marginBottom:14, lineHeight:1.5 }}>
+                These amounts are charged to the buyer at checkout (by listing value). Save here to update the live app — no code change needed.
+              </div>
+              {!myUser?.isAdmin && (
+                <div style={{ background:"#fff8e6", border:"1px solid #f9ca24", borderRadius:12, padding:"10px 12px", fontSize:12, color:"#9a6700", marginBottom:12 }}>
+                  View only. Ask an admin to grant access (`is_admin` on your user) to save changes.
+                </div>
+              )}
+              {uspsRates.map((r, i) => (
+                <div key={i} style={{ background:"#fff", borderRadius:16, padding:14, border:"1px solid #E4EBF2", marginBottom:10 }}>
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+                    <label style={{ fontSize:10, fontWeight:700, color:"#aaa" }}>Box label
+                      <input value={r.label} disabled={!myUser?.isAdmin} onChange={(e) => setUspsRates((rows) => rows.map((row, j) => j === i ? { ...row, label: e.target.value } : row))} style={{ ...IS, marginTop:4 }} />
+                    </label>
+                    <label style={{ fontSize:10, fontWeight:700, color:"#aaa" }}>Up to value ($)
+                      <input type="number" value={r.maxValue} disabled={!myUser?.isAdmin} onChange={(e) => setUspsRates((rows) => rows.map((row, j) => j === i ? { ...row, maxValue: Number(e.target.value) } : row))} style={{ ...IS, marginTop:4 }} />
+                    </label>
+                    <label style={{ fontSize:10, fontWeight:700, color:"#aaa" }}>Buyer pays ($)
+                      <input type="number" step="0.01" value={r.price} disabled={!myUser?.isAdmin} onChange={(e) => setUspsRates((rows) => rows.map((row, j) => j === i ? { ...row, price: Number(e.target.value) } : row))} style={{ ...IS, marginTop:4 }} />
+                    </label>
+                    <label style={{ fontSize:10, fontWeight:700, color:"#aaa" }}>Insurance add-on ($)
+                      <input type="number" step="0.01" value={r.insurance} disabled={!myUser?.isAdmin} onChange={(e) => setUspsRates((rows) => rows.map((row, j) => j === i ? { ...row, insurance: Number(e.target.value) } : row))} style={{ ...IS, marginTop:4 }} />
+                    </label>
+                  </div>
+                  {myUser?.isAdmin && uspsRates.length > 1 && (
+                    <button type="button" onClick={() => setUspsRates((rows) => rows.filter((_, j) => j !== i))} style={{ marginTop:8, background:"#fff0f0", border:"none", borderRadius:8, padding:"6px 10px", fontSize:11, fontWeight:700, color:"#ff6b6b", cursor:"pointer" }}>Remove tier</button>
+                  )}
+                </div>
+              ))}
+              {myUser?.isAdmin && (
+                <div style={{ display:"flex", gap:8, marginTop:4 }}>
+                  <button type="button" onClick={() => setUspsRates((rows) => [...rows, { maxValue: 99999, label: "Large Flat Rate Box", price: 19.95, insurance: 0 }])} style={{ flex:1, background:"#EEF2F7", border:"none", borderRadius:12, padding:"12px", fontWeight:700, fontSize:13, color:"#2C3E50", cursor:"pointer" }}>+ Add tier</button>
+                  <button type="button" disabled={ratesSaving} onClick={saveUspsRates} style={{ flex:1, background:"#2C3E50", border:"none", borderRadius:12, padding:"12px", fontWeight:800, fontSize:13, color:"#fff", cursor:"pointer" }}>{ratesSaving ? "Saving…" : "Save rates"}</button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -6090,11 +6154,11 @@ function AppShell({ onSignOut, authUser }) {
           {/* USPS rates reference */}
           <div style={{ fontWeight:700,fontSize:12,color:"#aaa",letterSpacing:1,marginBottom:10 }}>USPS GROUND RATES</div>
           <div style={{ background:"#fff",borderRadius:18,overflow:"hidden",boxShadow:"0 2px 10px rgba(0,0,0,0.05)",border:"1px solid #E4EBF2",marginBottom:20 }}>
-            {USPS_RATES.map((r,i)=>(
-              <div key={i} style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"13px 16px",borderBottom:i<USPS_RATES.length-1?"1px solid #f0f0f0":"none" }}>
+            {uspsRates.map((r,i)=>(
+              <div key={i} style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"13px 16px",borderBottom:i<uspsRates.length-1?"1px solid #f0f0f0":"none" }}>
                 <div>
                   <div style={{ fontWeight:700,fontSize:12,color:"#2C3E50" }}>{r.label}</div>
-                  <div style={{ fontSize:10,color:"#aaa",marginTop:2 }}>Items up to ${i===USPS_RATES.length-1?"any value":r.maxValue}</div>
+                  <div style={{ fontSize:10,color:"#aaa",marginTop:2 }}>Items up to ${i===uspsRates.length-1?"any value":r.maxValue}</div>
                 </div>
                 <div style={{ fontWeight:900,fontSize:15,color:"#3A7BD5" }}>${r.price.toFixed(2)}</div>
               </div>
