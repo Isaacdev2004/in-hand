@@ -11,7 +11,8 @@ const config: CapacitorConfig = {
   ios: {
     // Let CSS env(safe-area-inset-*) own the insets — "automatic" letterboxes the WebView
     contentInset: "never",
-    scrollEnabled: true,
+    // Inner CSS handles vertical scroll; native pan was letting pages slide sideways
+    scrollEnabled: false,
     backgroundColor: "#f4f6f8",
   },
   plugins: {

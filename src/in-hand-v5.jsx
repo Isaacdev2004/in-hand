@@ -432,7 +432,7 @@ function CyclingSubtitle() {
 }
 
 // ─── SHARED STYLES ────────────────────────────────────────────────────────────
-const IS = { background:"#fff", border:"1px solid #d8e0ea", borderRadius:14, padding:"12px 14px", fontSize:14, fontFamily:UI_FONT, fontWeight:500, color:"#15202b", width:"100%", outline:"none" };
+const IS = { background:"#fff", border:"1px solid #d8e0ea", borderRadius:14, padding:"12px 14px", fontSize:14, fontFamily:UI_FONT, fontWeight:500, color:"#15202b", width:"100%", minWidth:0, maxWidth:"100%", outline:"none", boxSizing:"border-box" };
 const TS = (on) => ({ flex:1, background:on?"#2C3E50":"#E4EBF2", border:"none", borderRadius:10, padding:"9px", textAlign:"center", fontSize:12, fontWeight:700, color:on?"#fff":"#aaa", cursor:"pointer", transition:"all 0.15s" });
 const Btn = ({ children, onClick, style = {}, type = "button", disabled }) => <button type={type} onClick={onClick} disabled={disabled} style={{ border:"none", borderRadius:12, padding:"12px", fontWeight:700, fontSize:14, cursor:disabled?"not-allowed":"pointer", fontFamily:UI_FONT, ...style }}>{children}</button>;
 
@@ -467,7 +467,7 @@ function ListingDetailView({ card, owner, myVault, onBack, onSendProposal, onBuy
     .filter((v, i, a) => a.indexOf(v) === i && v >= 0);
 
   return (
-    <div className="inhand-listing-detail" style={{ flex: 1, display: "flex", flexDirection: "column", overflowY: "auto", paddingBottom: 100 }}>
+    <div className="inhand-listing-detail" style={{ flex: 1, display: "flex", flexDirection: "column", overflowY: "auto", overflowX: "hidden", minWidth: 0, maxWidth: "100%", paddingBottom: 100 }}>
       <div className="inhand-listing-detail-hero" style={{ background: "linear-gradient(160deg,#1a2a3a 0%,#2C3E50 40%,#3A7BD5 100%)", minHeight: 300, display: "flex", alignItems: "center", justifyContent: "center", position: "relative", flexShrink: 0, paddingTop: "calc(12px + env(safe-area-inset-top, 0px))" }}>
         <button type="button" onClick={onBack} aria-label="Back" style={{ position: "absolute", top: "calc(14px + env(safe-area-inset-top, 0px))", left: 16, background: "rgba(255,255,255,0.15)", border: "none", borderRadius: "50%", width: 36, height: 36, color: "#fff", fontSize: 16, cursor: "pointer", zIndex: 2 }}>←</button>
         <div onClick={card.photos?.length ? onOpenPhotos : undefined} style={{ cursor: card.photos?.length ? "pointer" : "default", marginTop: 8 }}>
@@ -481,8 +481,8 @@ function ListingDetailView({ card, owner, myVault, onBack, onSendProposal, onBuy
 
       <div style={{ background: "#fff", padding: 20, marginBottom: 12 }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8 }}>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 900, fontSize: 19, color: "#2C3E50", lineHeight: 1.2 }}>{card.name}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 900, fontSize: 19, color: "#2C3E50", lineHeight: 1.2, overflowWrap: "anywhere" }}>{card.name}</div>
             <div style={{ fontSize: 12, color: "#aaa", marginTop: 3 }}>{card.brand ? `${card.brand} · ` : ""}{card.line}</div>
           </div>
           <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 12 }}>
@@ -505,7 +505,7 @@ function ListingDetailView({ card, owner, myVault, onBack, onSendProposal, onBuy
         </div>
       </div>
 
-      <div className="inhand-listing-detail-actions" style={{ position: "fixed", bottom: 0, left: 0, right: 0, width: "100%", background: "#fff", borderTop: "1px solid #E4EBF2", padding: "14px 20px calc(14px + env(safe-area-inset-bottom, 0px))", zIndex: 50 }}>
+      <div className="inhand-listing-detail-actions" style={{ position: "fixed", bottom: 0, left: 0, right: 0, width: "100%", maxWidth: "100%", boxSizing: "border-box", background: "#fff", borderTop: "1px solid #E4EBF2", padding: "14px 20px calc(14px + env(safe-area-inset-bottom, 0px))", zIndex: 50 }}>
         <div style={{ display: "flex", gap: 10, maxWidth: 560, margin: "0 auto" }}>
           {card.wantsTrade && <button type="button" onClick={() => setSheet("trade")} style={{ flex: 1, background: "#EAF1FA", border: "2px solid #3A7BD5", borderRadius: 14, padding: "13px", fontWeight: 800, fontSize: 14, color: "#3A7BD5", cursor: "pointer" }}>⇄ Trade</button>}
           {card.wantsBuy && <button type="button" onClick={() => { onBuy(); }} style={{ flex: 2, background: "#2C3E50", border: "none", borderRadius: 14, padding: "13px", fontWeight: 800, fontSize: 14, color: "#fff", cursor: "pointer" }}>Buy ${card.value}</button>}
@@ -5173,7 +5173,7 @@ function AppShell({ onSignOut, authUser }) {
       <div className="inhand-app-body">
       {!(tab === "messages" && activeThread) && !detailListing && (
       <header className="inhand-header">
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12, gap:8, minWidth:0 }}>
           <div className="inhand-brand-lockup">
             <div className="inhand-brand-logo">
               <img src={LOGO_IMG} alt="in-HAND™" />
@@ -5248,7 +5248,7 @@ function AppShell({ onSignOut, authUser }) {
               ))}
             </div>
           )}
-          <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:14 }}>
+          <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:14,flexWrap:"wrap" }}>
             <div style={{ display:"flex",background:"#DCE6F0",borderRadius:10,padding:3,gap:2 }}>
               {[["all","All"],["trade","Trade"],["buy","Buy"]].map(([f,l])=><button key={f} onClick={()=>setTypeFilter(f)} style={{ background:typeFilter===f?"#fff":"transparent",border:"none",borderRadius:7,padding:"4px 9px",fontSize:11,fontWeight:700,color:typeFilter===f?"#2C3E50":"#aaa",cursor:"pointer" }}>{l}</button>)}
             </div>
@@ -5283,7 +5283,7 @@ function AppShell({ onSignOut, authUser }) {
                         onVideoOpen={() => { const e = getListingVideoEmbed(card.videoUrl); if (e) setListingVideoModal(e); }}
                       />
                       <div style={{ flex:1,minWidth:0 }}>
-                        <div style={{ fontWeight:800,fontSize:14,color:"#2C3E50" }}>{card.name}</div>
+                        <div style={{ fontWeight:800,fontSize:14,color:"#2C3E50",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{card.name}</div>
                         <div style={{ fontSize:11,color:"#8a97a6",marginTop:1 }}>{card.brand ? `${card.brand} · ` : ""}{card.line}</div>
                         {card.description && <div style={{ fontSize:11,color:"#888",marginTop:3,lineHeight:1.4,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden" }}>{card.description}</div>}
                         <div style={{ display:"flex",gap:6,marginTop:6,alignItems:"center",flexWrap:"wrap" }}>
@@ -5311,7 +5311,7 @@ function AppShell({ onSignOut, authUser }) {
                       <span style={{ fontSize:11,fontWeight:700,color:"#888" }}>{card.owner?.username}</span>
                       {card.owner?.verified && <VerifiedInHandBadge compact />}
                       <span style={{ fontSize:10,color:"#8a97a6" }}>Rating {card.owner?.rating}</span>
-                      <div style={{ marginLeft:"auto",display:"flex",gap:6 }}>
+                      <div style={{ marginLeft:"auto",display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end" }}>
                         <button type="button" onClick={(e) => { e.stopPropagation(); setMarketModal(card); }} className="inhand-text-button">Market</button>
                         <button type="button" onClick={(e) => { e.stopPropagation(); setShareCard(card); }} className="inhand-text-button">Share</button>
                         {card.wantsTrade && <button type="button" onClick={() => openThread(card.owner?.id || card.ownerId, card)} className="inhand-text-button">Message</button>}
@@ -5793,8 +5793,8 @@ function AppShell({ onSignOut, authUser }) {
             );
           })()}
 
-          <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4 }}>
-            <div>
+          <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4,gap:8,minWidth:0 }}>
+            <div style={{ minWidth:0 }}>
               <div style={{ fontWeight:800,fontSize:18,color:"#2C3E50" }}>🗃️ My Vault</div>
               <div style={{ fontSize:12,color:"#888",marginTop:4 }}>Your collection — photos, listing status & inventory</div>
             </div>
@@ -5817,7 +5817,7 @@ function AppShell({ onSignOut, authUser }) {
               <button onClick={()=>setShowAddCard(true)} style={{ background:"linear-gradient(135deg,#4A90D9,#f0932b)", border:"none", borderRadius:16, padding:"14px 32px", color:"#fff", fontWeight:800, fontSize:15, cursor:"pointer", boxShadow:"0 4px 16px rgba(253,121,168,0.4)" }}>
                 + Add Your First Figure
               </button>
-              <div style={{ marginTop:20, display:"flex", justifyContent:"center", gap:16 }}>
+              <div style={{ marginTop:20, display:"flex", justifyContent:"center", gap:16, flexWrap:"wrap" }}>
                 {["📷 Add photos","💰 Set your price","⇄ Trade or sell"].map((t,i)=>(
                   <div key={i} style={{ fontSize:11, color:"#bbb", fontWeight:600 }}>{t}</div>
                 ))}
@@ -5833,8 +5833,8 @@ function AppShell({ onSignOut, authUser }) {
                 <FigureImage card={fig} size={56} borderRadius={14} onClick={fig.photos?.length>0?()=>setPhotoViewer({photos:fig.photos,startIdx:0}):undefined} onVideoOpen={() => { const e = getListingVideoEmbed(fig.videoUrl); if (e) setListingVideoModal(e); }} />
                 {fig.wantsTrade&&<div style={{ position:"absolute",top:-4,right:-4,width:12,height:12,background:"#00b894",borderRadius:"50%",border:"2px solid #fff" }} />}
               </div>
-              <div style={{ flex:1 }}>
-                <div style={{ fontWeight:800,fontSize:14,color:"#2C3E50" }}>{fig.name}</div>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontWeight:800,fontSize:14,color:"#2C3E50",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{fig.name}</div>
                 <div style={{ fontSize:11,color:"#bbb",marginTop:1 }}>{fig.line}</div>
                 {fig.description && <div style={{ fontSize:11,color:"#888",marginTop:3,lineHeight:1.4 }}>{fig.description}</div>}
                 <div style={{ display:"flex",gap:6,marginTop:5 }}><span style={{ fontSize:10,fontWeight:800,background:condBg(fig.isNew),color:condColor(fig.isNew),borderRadius:6,padding:"2px 8px" }}>{condLabel(fig.isNew)}</span><span style={{ fontWeight:800,fontSize:13,color:from }}>${fig.value}</span></div>
@@ -5864,9 +5864,9 @@ function AppShell({ onSignOut, authUser }) {
       {/* ── DB ── */}
       {tab==="db" && (
         <div style={{ flex:1,overflowY:"auto",padding:"20px 20px 90px" }}>
-          <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16 }}>
-            <div style={{ display:"flex",alignItems:"center",gap:10 }}>
-              <button onClick={()=>setTab("account")} style={{ background:"#E4EBF2",border:"none",borderRadius:10,padding:"6px 12px",fontSize:12,fontWeight:700,color:"#555",cursor:"pointer" }}>← Account</button>
+          <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,gap:8,flexWrap:"wrap" }}>
+            <div style={{ display:"flex",alignItems:"center",gap:10,minWidth:0 }}>
+              <button onClick={()=>setTab("account")} style={{ background:"#E4EBF2",border:"none",borderRadius:10,padding:"6px 12px",fontSize:12,fontWeight:700,color:"#555",cursor:"pointer",flexShrink:0 }}>← Account</button>
               <div style={{ fontWeight:800,fontSize:18,color:"#2C3E50" }}>🛡️ Admin Dashboard</div>
             </div>
             <button
@@ -5881,16 +5881,16 @@ function AppShell({ onSignOut, authUser }) {
               style={{ background:"#fff0f0",border:"none",borderRadius:10,padding:"6px 12px",fontSize:11,fontWeight:700,color:"#ff6b6b",cursor:"pointer" }}
             >{supabase ? "Reload from cloud" : "Reset"}</button>
           </div>
-          <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,marginBottom:18 }}>
+          <div style={{ display:"grid",gridTemplateColumns:"repeat(4, minmax(0, 1fr))",gap:8,marginBottom:18 }}>
             {[["👥",db.users.length,"Users"],["🤖",db.cards.length,"Figures"],["💸",db.transactions.length,"Txns"],["🚨",(db.disputes||[]).filter(d=>d.status==="open").length,"Disputes"]].map(([icon,val,label])=>(
               <div key={label} style={{ background:"#fff",borderRadius:14,padding:"12px 8px",textAlign:"center",boxShadow:"0 2px 10px rgba(0,0,0,0.05)",border:"1px solid #E4EBF2" }}>
                 <div style={{ fontSize:20 }}>{icon}</div><div style={{ fontWeight:900,fontSize:18,color:"#2C3E50",lineHeight:1.2 }}>{val}</div><div style={{ fontSize:9,color:"#bbb",fontWeight:700 }}>{label}</div>
               </div>
             ))}
           </div>
-          <div style={{ display:"flex",background:"#DCE6F0",borderRadius:12,padding:4,gap:2,marginBottom:16 }}>
+          <div className="inhand-chip-row" style={{ background:"#DCE6F0",borderRadius:12,padding:4,marginBottom:16 }}>
             {[["users","👥 Users"],["cards","🤖 Figures"],["txns","💸 Txns"],["disputes","🚨 Disputes"],["rates","📦 Rates"]].map(([id,label])=>(
-              <button key={id} onClick={()=>setAdminView(id)} style={{ flex:1,background:adminView===id?"#fff":"transparent",border:"none",borderRadius:8,padding:"7px 2px",fontSize:10,fontWeight:adminView===id?800:600,color:adminView===id?"#2C3E50":"#aaa",cursor:"pointer" }}>{label}</button>
+              <button key={id} onClick={()=>setAdminView(id)} style={{ flexShrink:0,background:adminView===id?"#fff":"transparent",border:"none",borderRadius:8,padding:"7px 10px",fontSize:10,fontWeight:adminView===id?800:600,color:adminView===id?"#2C3E50":"#aaa",cursor:"pointer",whiteSpace:"nowrap" }}>{label}</button>
             ))}
           </div>
           {adminView==="users" && (
@@ -6033,7 +6033,7 @@ function AppShell({ onSignOut, authUser }) {
               )}
               {(uspsRates || DEFAULT_USPS_RATES).map((r, i) => (
                 <div key={i} style={{ background:"#fff", borderRadius:16, padding:14, border:"1px solid #E4EBF2", marginBottom:10 }}>
-                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+                  <div style={{ display:"grid", gridTemplateColumns:"minmax(0, 1fr) minmax(0, 1fr)", gap:8 }}>
                     <label style={{ fontSize:10, fontWeight:700, color:"#aaa" }}>Box label
                       <input value={r.label} disabled={!myUser?.isAdmin} onChange={(e) => setUspsRates((rows) => rows.map((row, j) => j === i ? { ...row, label: e.target.value } : row))} style={{ ...IS, marginTop:4 }} />
                     </label>

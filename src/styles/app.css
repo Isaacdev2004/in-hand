@@ -32,7 +32,7 @@
 }
 
 html {
-  overflow-x: hidden;
+  overflow-x: clip;
   width: 100%;
   max-width: 100%;
 }
@@ -43,9 +43,23 @@ body,
   min-height: 100%;
 }
 
+input,
+textarea,
+select {
+  max-width: 100%;
+  min-width: 0;
+}
+
+img,
+video,
+iframe,
+canvas {
+  max-width: 100%;
+}
+
 body {
   margin: 0;
-  overflow-x: hidden;
+  overflow-x: clip;
   width: 100%;
   max-width: 100%;
   position: relative;
@@ -67,12 +81,13 @@ body {
 .inhand-shell {
   width: 100%;
   max-width: min(100%, var(--ih-content-max));
+  min-width: 0;
   min-height: 100dvh;
   height: 100dvh;
   margin: 0 auto;
   overflow: hidden;
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
   background: var(--ih-bg);
   color: var(--ih-text);
   font-family: var(--ih-font);
@@ -80,11 +95,18 @@ body {
 
 .inhand-app-body {
   min-width: 0;
+  max-width: 100%;
   display: flex;
   flex-direction: column;
   min-height: 0;
   height: 100%;
   overflow: hidden;
+}
+
+.inhand-app-body > * {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 .inhand-sidebar {
@@ -257,9 +279,11 @@ html.capacitor-native.keyboard-open .inhand-bottom-nav {
   }
 }
 
-.inhand-main {
+.inhand-main,
+.inhand-page {
   flex: 1;
   min-height: 0;
+  min-width: 0;
   overflow-x: hidden;
   overflow-y: auto;
   max-width: 100%;
@@ -267,11 +291,20 @@ html.capacitor-native.keyboard-open .inhand-bottom-nav {
   -webkit-overflow-scrolling: touch;
 }
 
+.inhand-listing-detail {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 .inhand-header {
   position: sticky;
   top: 0;
   z-index: 20;
   flex-shrink: 0;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
   padding: calc(8px + env(safe-area-inset-top, 0px)) 16px 10px;
   background: rgba(244, 246, 248, 0.94);
   backdrop-filter: blur(12px);
@@ -363,6 +396,7 @@ html.capacitor-native.keyboard-open .inhand-bottom-nav {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 .inhand-pill {
@@ -416,6 +450,8 @@ html.capacitor-native.keyboard-open .inhand-bottom-nav {
   display: flex;
   gap: 4px;
   padding: 4px;
+  max-width: 100%;
+  min-width: 0;
   border-radius: var(--ih-radius-md);
   background: var(--ih-surface-muted);
   border: 1px solid var(--ih-border);
@@ -423,6 +459,7 @@ html.capacitor-native.keyboard-open .inhand-bottom-nav {
 
 .inhand-segmented button {
   flex: 1;
+  min-width: 0;
   border: none;
   background: transparent;
   border-radius: 10px;
@@ -431,6 +468,9 @@ html.capacitor-native.keyboard-open .inhand-bottom-nav {
   font-weight: 600;
   color: var(--ih-text-soft);
   cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .inhand-segmented button[data-active="true"] {
