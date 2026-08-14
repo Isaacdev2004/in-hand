@@ -35,9 +35,9 @@ export function normalizeRates(rates) {
 }
 
 export function getShippingRate(value, rates = cachedRates) {
-  const list = normalizeRates(rates);
+  const list = normalizeRates(rates?.length ? rates : DEFAULT_USPS_RATES);
   const v = Number(value) || 0;
-  return list.find((r) => v <= r.maxValue) || list[list.length - 1];
+  return list.find((r) => v <= r.maxValue) || list[list.length - 1] || DEFAULT_USPS_RATES[0];
 }
 
 export function getInsuranceCost(value, rates = cachedRates) {

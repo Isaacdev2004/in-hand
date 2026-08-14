@@ -38,11 +38,24 @@ function withTimeout(promise, ms, label = "timeout") {
 export async function ensureUserProfile(user) {
   if (!supabase || !user?.id) return null;
 
-  const { data: existing, error: readError } = await supabase
+  const baseSelect = "id, username, avatar, verified";
+  let existing = null;
+  let readError = null;
+
+  ({ data: existing, error: readError } = await supabase
     .from("users")
-    .select("id, username, avatar, verified, is_admin")
+    .select(`${baseSelect}, is_admin`)
     .eq("id", user.id)
-    .maybeSingle();
+    .maybeSingle());
+
+  // Column missing until shipping_rates migration is applied — don't crash the app
+  if (readError && /is_admin/i.test(readError.message || "")) {
+    ({ data: existing, error: readError } = await supabase
+      .from("users")
+      .select(baseSelect)
+      .eq("id", user.id)
+      .maybeSingle());
+  }
 
   if (readError) throw readError;
   if (existing) return profileFromRow(existing);
