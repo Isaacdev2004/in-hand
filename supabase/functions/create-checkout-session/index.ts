@@ -108,6 +108,11 @@ Deno.serve(async (req) => {
       mode: "payment",
       success_url: successUrl,
       cancel_url: cancelUrl,
+      customer_email: user.email || undefined,
+      billing_address_collection: "required",
+      shipping_address_collection: {
+        allowed_countries: ["US"],
+      },
       line_items: [
         {
           quantity: 1,

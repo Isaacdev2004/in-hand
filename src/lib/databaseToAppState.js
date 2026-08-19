@@ -90,6 +90,8 @@ function shipmentFromRow(r) {
     deliveredAt: r.delivered_at,
     disputeFrozen: r.dispute_frozen,
     events: r.events || [],
+    shipTo: r.ship_to || null,
+    shipFrom: r.ship_from || null,
   };
 }
 

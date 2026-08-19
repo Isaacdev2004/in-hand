@@ -41,6 +41,23 @@ export function parcelForFigureValue(value: number, rates?: ShippingRate[]) {
   };
 }
 
+export function storedAddressFromRecord(addr: Record<string, unknown> | null | undefined): ShippoAddress | null {
+  if (!addr) return null;
+  const street = String(addr.street || addr.street1 || "").trim();
+  const city = String(addr.city || "").trim();
+  const state = String(addr.state || "").trim();
+  const zip = String(addr.zip || addr.postal_code || "").trim();
+  if (!street || !city || !state || !zip) return null;
+  return {
+    name: String(addr.name || "Recipient").trim() || "Recipient",
+    street1: street,
+    city,
+    state,
+    zip,
+    country: String(addr.country || "US").trim() || "US",
+  };
+}
+
 export function pickDefaultAddress(
   addresses: Array<{
     name?: string;

@@ -749,7 +749,7 @@ function CheckoutModal({ card, seller, onPayWithCard, onClose }) {
               </div>
             </div>
             <div style={{ background:"#EAF1FA", borderRadius:12, padding:"10px 14px", marginBottom:20, fontSize:11, color:"#555", lineHeight:1.5 }}>
-              You will pay with your <strong>debit or credit card</strong> on Stripe’s secure checkout. In Hand wallet balance is for <strong>sale earnings only</strong> — not used at purchase.
+              You will pay with your <strong>debit or credit card</strong> on Stripe’s secure checkout. Stripe will ask for the <strong>full US shipping address</strong> this figure should be mailed to — that address is saved on the order and printed on the seller’s USPS label.
             </div>
             <Btn onClick={handlePay} disabled={busy} style={{ background:"#2C3E50", color:"#fff", width:"100%", opacity:busy?0.7:1 }}>
               {busy ? "Opening Stripe…" : `Pay $${fmt(grandTotal)} with card`}
@@ -1513,10 +1513,13 @@ function LabelModal({ shipment, rate, seller, buyer, sellerAddresses, onGenerate
   const [generatedTN, setGeneratedTN] = useState("");
   const [labelUrl, setLabelUrl] = useState("");
   const [generateError, setGenerateError] = useState("");
-  const buyerShipAddr = buyer?.addresses?.find((a) => a.isDefault) || buyer?.addresses?.[0];
+  const buyerShipAddr = shipment?.shipTo || buyer?.addresses?.find((a) => a.isDefault) || buyer?.addresses?.[0];
   const buyerAddressReady = !!(
     buyerShipAddr?.street && buyerShipAddr?.city && buyerShipAddr?.state && buyerShipAddr?.zip
   );
+  const shipToLine = buyerAddressReady
+    ? `${buyerShipAddr.street}, ${buyerShipAddr.city}, ${buyerShipAddr.state} ${buyerShipAddr.zip}`
+    : "";
   const setF = (k, v) => setFromAddr(a => ({...a, [k]: v}));
 
   const pickSavedAddr = (addr) => {
@@ -1631,15 +1634,13 @@ function LabelModal({ shipment, rate, seller, buyer, sellerAddresses, onGenerate
             {/* Destination (read only) */}
             <div style={{ background:"#f0fff8",border:"1.5px solid #00b89433",borderRadius:14,padding:"12px 14px",marginBottom:16 }}>
               <div style={{ fontWeight:700,fontSize:11,color:"#00b894",marginBottom:8,letterSpacing:0.8 }}>SHIPPING TO</div>
-              <div style={{ fontWeight:800,fontSize:13,color:"#2C3E50" }}>{toAddr.name}</div>
+              <div style={{ fontWeight:800,fontSize:13,color:"#2C3E50" }}>{buyerShipAddr?.name || toAddr.name}</div>
               <div style={{ fontSize:11,color:"#aaa",marginTop:2 }}>
-                {buyerAddressReady
-                  ? `${buyerShipAddr.street}, ${buyerShipAddr.city}, ${buyerShipAddr.state} ${buyerShipAddr.zip}`
-                  : `Address on file · ${toAddr.city}`}
+                {buyerAddressReady ? shipToLine : `Address missing · ${toAddr.city}`}
               </div>
               {!buyerAddressReady && supabase && (
                 <div style={{ fontSize:10,color:"#ff6b6b",marginTop:6,fontWeight:600 }}>
-                  Buyer must add a full shipping address in Account → Addresses before you can generate a label.
+                  No ship-to on this order. The buyer must complete checkout with a US shipping address.
                 </div>
               )}
             </div>
@@ -1696,7 +1697,7 @@ function LabelModal({ shipment, rate, seller, buyer, sellerAddresses, onGenerate
               <div style={{ fontWeight:700,fontSize:12,color:"#aaa",marginBottom:12,letterSpacing:0.8 }}>CONFIRM DETAILS</div>
               {[
                 ["From", `${fromAddr.name}, ${fromAddr.street}, ${fromAddr.city} ${fromAddr.state} ${fromAddr.zip}`],
-                ["To",   `${toAddr.name} (address on file)`],
+                ["To",   buyerAddressReady ? `${buyerShipAddr.name || toAddr.name}, ${shipToLine}` : `${toAddr.name} (no address yet)`],
                 ["Service", "USPS Ground Advantage"],
                 ["Package", rate?.label],
                 ["Label cost", `$${Number(rate?.price || 0).toFixed(2)} (from escrow)`],
@@ -1773,7 +1774,7 @@ function LabelModal({ shipment, rate, seller, buyer, sellerAddresses, onGenerate
                 </div>
                 <div>
                   <div style={{ fontSize:9,color:"#aaa",fontWeight:700,letterSpacing:1 }}>TO</div>
-                  <div style={{ fontSize:11,color:"#2C3E50",marginTop:3,lineHeight:1.4 }}>{toAddr.name}<br/>Address on file</div>
+                  <div style={{ fontSize:11,color:"#2C3E50",marginTop:3,lineHeight:1.4 }}>{buyerShipAddr?.name || toAddr.name}<br/>{buyerAddressReady ? <>{buyerShipAddr.street}<br/>{buyerShipAddr.city}, {buyerShipAddr.state} {buyerShipAddr.zip}</> : "Address on file"}</div>
                 </div>
               </div>
               {/* Barcode simulation */}
@@ -5114,10 +5115,6 @@ function AppShell({ onSignOut, authUser }) {
                   <div style={{ fontWeight:800,fontSize:14,color:"#00b894" }}>{s.autoReleased?"Funds auto-released to seller":"Funds released to seller"}</div>
                   <div style={{ fontSize:11,color:"#aaa",marginTop:4 }}>Transaction complete</div>
                 </div>
-              )}
-              {/* Simulate delivery button for demo */}
-              {s.status!=="delivered" && s.trackingNumber && (
-                <button onClick={()=>{simulateDelivery(s.id);setTrackingModal({...s,status:"delivered",events:[...s.events,{date:new Date().toISOString().slice(0,16).replace("T"," "),location:"Destination",description:"Delivered — Front Door"}]});}} style={{ width:"100%",background:"#EEF2F7",border:"none",borderRadius:12,padding:"10px",fontWeight:700,fontSize:12,color:"#888",cursor:"pointer",marginTop:12 }}>🎭 Simulate Delivery (demo)</button>
               )}
               {/* Report a Problem — buyer only, within 7d of delivery */}
               {s.status==="delivered" && s.toUser===activeUserId && !s.fundsReleased && !s.disputeFrozen && (() => {

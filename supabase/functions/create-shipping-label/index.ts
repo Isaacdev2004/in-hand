@@ -5,6 +5,7 @@ import {
   pickDefaultAddress,
   pickUspsGroundRate,
   shippoRequest,
+  storedAddressFromRecord,
   type ShippoAddress,
 } from "../_shared/shippo.ts";
 
@@ -54,7 +55,7 @@ Deno.serve(async (req) => {
 
     const { data: shipment, error: shipErr } = await supabase
       .from("shipments")
-      .select("id, txn_id, from_user, to_user, figure_value, tracking_number, status")
+      .select("id, txn_id, from_user, to_user, figure_value, figure_name, tracking_number, status, ship_to")
       .eq("id", shipmentId)
       .maybeSingle();
 
@@ -80,11 +81,13 @@ Deno.serve(async (req) => {
       return json({ error: "Buyer profile not found" }, 404);
     }
 
-    const toAddr = pickDefaultAddress(buyer.addresses);
+    const toAddr =
+      storedAddressFromRecord(shipment.ship_to) ||
+      pickDefaultAddress(buyer.addresses);
     if (!toAddr) {
       return json({
         error:
-          "Buyer has no complete shipping address. They must add one under Account → Addresses before you can generate a label.",
+          "No buyer shipping address on this order. The buyer must complete Stripe Checkout with a US address.",
       }, 400);
     }
 
@@ -161,6 +164,14 @@ Deno.serve(async (req) => {
         carrier: rate.servicelevel?.name || "USPS",
         status: "accepted",
         events,
+        ship_from: {
+          name: from.name,
+          street: from.street1,
+          city: from.city,
+          state: from.state,
+          zip: from.zip,
+          country: "US",
+        },
         updated_at: new Date().toISOString(),
       })
       .eq("id", shipmentId);
@@ -169,11 +180,44 @@ Deno.serve(async (req) => {
       return json({ error: "Label created but failed to save shipment", detail: updErr.message }, 500);
     }
 
+    const now = Date.now();
+    const tracking = txn.tracking_number;
+    const item = shipment.figure_name || "your figure";
+    await supabase.from("notifications").insert([
+      {
+        id: `n_label_b_${shipmentId}_${now}`,
+        recipient_id: shipment.to_user,
+        type: "shipping",
+        is_read: false,
+        title: "Your figure is on the way",
+        body: `${item} has a USPS label. Tracking ${tracking}.`,
+        link: "shipping",
+        related_user_id: shipment.from_user,
+      },
+      {
+        id: `n_label_s_${shipmentId}_${now}`,
+        recipient_id: shipment.from_user,
+        type: "shipping",
+        is_read: false,
+        title: "Shipping label created",
+        body: `USPS tracking for ${item}: ${tracking}.`,
+        link: "shipping",
+        related_user_id: shipment.to_user,
+      },
+    ]);
+
     return json({
       trackingNumber: txn.tracking_number,
       labelUrl: txn.label_url || null,
       carrier: rate.servicelevel?.name || "USPS",
       labelCost: rate.amount,
+      shipTo: {
+        name: toAddr.name,
+        street: toAddr.street1,
+        city: toAddr.city,
+        state: toAddr.state,
+        zip: toAddr.zip,
+      },
     });
   } catch (e) {
     console.error("create-shipping-label", e);

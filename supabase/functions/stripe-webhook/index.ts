@@ -29,13 +29,18 @@ Deno.serve(async (req) => {
     return new Response(`Webhook Error: ${err}`, { status: 400 });
   }
 
+  // Stripe Checkout (what the app uses) completes on checkout.session.completed.
+  // That event includes the shipping address the buyer entered. payment_intent.succeeded
+  // does not, so we ignore it here.
   if (event.type !== "checkout.session.completed") {
     return new Response(JSON.stringify({ received: true }), {
       headers: { "Content-Type": "application/json" },
     });
   }
 
-  const session = event.data.object as Stripe.Checkout.Session;
+  const session = await stripe.checkout.sessions.retrieve(
+    (event.data.object as Stripe.Checkout.Session).id,
+  );
   const md = session.metadata;
   if (!md?.listing_id || !md.buyer_id || !md.seller_id) {
     console.error("Missing metadata on session", session.id);
@@ -103,6 +108,56 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ error: txnErr.message }), { status: 500 });
   }
 
+  const shipTo = shipToFromStripeSession(session);
+
+  const { data: sellerRow } = await supabase
+    .from("users")
+    .select("username, addresses")
+    .eq("id", md.seller_id)
+    .maybeSingle();
+  const sellerDefault = Array.isArray(sellerRow?.addresses)
+    ? sellerRow.addresses.find((a: { isDefault?: boolean }) => a.isDefault) || sellerRow.addresses[0]
+    : null;
+  const shipFrom = sellerDefault?.street
+    ? {
+        name: sellerDefault.name || sellerRow?.username || "Seller",
+        street: sellerDefault.street,
+        city: sellerDefault.city,
+        state: sellerDefault.state,
+        zip: sellerDefault.zip,
+        country: "US",
+      }
+    : null;
+
+  if (shipTo) {
+    const { data: buyerRow } = await supabase
+      .from("users")
+      .select("id, addresses")
+      .eq("id", md.buyer_id)
+      .maybeSingle();
+    const existing = Array.isArray(buyerRow?.addresses) ? buyerRow.addresses : [];
+    const hasComplete = existing.some((a: { street?: string; zip?: string }) => a?.street && a?.zip);
+    if (!hasComplete) {
+      await supabase
+        .from("users")
+        .update({
+          addresses: [
+            {
+              id: `stripe_${session.id}`,
+              label: "Home",
+              name: shipTo.name,
+              street: shipTo.street,
+              city: shipTo.city,
+              state: shipTo.state,
+              zip: shipTo.zip,
+              isDefault: true,
+            },
+          ],
+        })
+        .eq("id", md.buyer_id);
+    }
+  }
+
   const { error: shipErr } = await supabase.from("shipments").insert({
     id: shipmentId,
     txn_id: txnId,
@@ -121,6 +176,8 @@ Deno.serve(async (req) => {
     delivered_at: null,
     dispute_frozen: false,
     events: [],
+    ship_to: shipTo,
+    ship_from: shipFrom,
   });
 
   if (shipErr) {
@@ -146,3 +203,17 @@ Deno.serve(async (req) => {
     headers: { "Content-Type": "application/json" },
   });
 });
+
+function shipToFromStripeSession(session: Stripe.Checkout.Session) {
+  const details = session.shipping_details;
+  const addr = details?.address;
+  if (!addr?.line1 || !addr.city || !addr.state || !addr.postal_code) return null;
+  return {
+    name: details?.name || "Buyer",
+    street: [addr.line1, addr.line2].filter(Boolean).join(", "),
+    city: addr.city,
+    state: addr.state,
+    zip: addr.postal_code,
+    country: addr.country || "US",
+  };
+}
