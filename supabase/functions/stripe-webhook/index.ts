@@ -29,26 +29,6 @@ Deno.serve(async (req) => {
     return new Response(`Webhook Error: ${err}`, { status: 400 });
   }
 
-  // Stripe Checkout (what the app uses) completes on checkout.session.completed.
-  // That event includes the shipping address the buyer entered. payment_intent.succeeded
-  // does not, so we ignore it here.
-  if (event.type !== "checkout.session.completed") {
-    return new Response(JSON.stringify({ received: true }), {
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
-  const session = await stripe.checkout.sessions.retrieve(
-    (event.data.object as Stripe.Checkout.Session).id,
-  );
-  const md = session.metadata;
-  if (!md?.listing_id || !md.buyer_id || !md.seller_id) {
-    console.error("Missing metadata on session", session.id);
-    return new Response(JSON.stringify({ received: true, skipped: true }), {
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const supabase = createClient(supabaseUrl, serviceKey);
@@ -60,13 +40,69 @@ Deno.serve(async (req) => {
     .maybeSingle();
 
   if (seenEvent) {
-    return new Response(JSON.stringify({ received: true, duplicate_event: true }), {
+    return json({ received: true, duplicate_event: true });
+  }
+
+  try {
+    if (event.type === "checkout.session.completed") {
+      const session = await stripe.checkout.sessions.retrieve(
+        (event.data.object as Stripe.Checkout.Session).id,
+      );
+      await fulfillPurchase(supabase, {
+        idKey: session.id,
+        md: session.metadata || {},
+        shipTo: shipToFromCheckout(session),
+        method: "stripe_checkout",
+      });
+    } else if (event.type === "payment_intent.succeeded") {
+      const pi = event.data.object as Stripe.PaymentIntent;
+      const md = pi.metadata || {};
+      if (md.purpose === "trade_fee") {
+        await supabase.from("stripe_events").insert({ id: event.id });
+        return json({ received: true, trade_fee: true });
+      }
+      if (md.purpose === "purchase" || md.listing_id) {
+        await fulfillPurchase(supabase, {
+          idKey: pi.id,
+          md,
+          shipTo: shipToFromPaymentIntent(pi),
+          method: "stripe_payment_sheet",
+        });
+      } else {
+        await supabase.from("stripe_events").insert({ id: event.id });
+        return json({ received: true, skipped: true });
+      }
+    } else {
+      return json({ received: true });
+    }
+
+    await supabase.from("stripe_events").insert({ id: event.id });
+    return json({ received: true });
+  } catch (e) {
+    console.error("stripe-webhook fulfill", e);
+    return new Response(JSON.stringify({ error: String(e?.message ?? e) }), {
+      status: 500,
       headers: { "Content-Type": "application/json" },
     });
   }
+});
 
-  const txnId = `t_${session.id}`;
-  const shipmentId = `sh_${session.id}`;
+async function fulfillPurchase(
+  supabase: ReturnType<typeof createClient>,
+  opts: {
+    idKey: string;
+    md: Stripe.Metadata;
+    shipTo: ReturnType<typeof shipToFromCheckout>;
+    method: string;
+  },
+) {
+  const { idKey, md, shipTo, method } = opts;
+  if (!md?.listing_id || !md.buyer_id || !md.seller_id) {
+    throw new Error("Missing purchase metadata");
+  }
+
+  const txnId = `t_${idKey}`;
+  const shipmentId = `sh_${idKey}`;
   const today = new Date().toISOString().split("T")[0];
 
   const { data: existing } = await supabase
@@ -74,13 +110,7 @@ Deno.serve(async (req) => {
     .select("id")
     .eq("id", txnId)
     .maybeSingle();
-
-  if (existing) {
-    await supabase.from("stripe_events").insert({ id: event.id });
-    return new Response(JSON.stringify({ received: true, idempotent: true }), {
-      headers: { "Content-Type": "application/json" },
-    });
-  }
+  if (existing) return;
 
   const amount = parseFloat(md.listing_value);
   const fee = parseFloat(md.fee);
@@ -97,18 +127,12 @@ Deno.serve(async (req) => {
     fee,
     net,
     status: "in_escrow",
-    method: "stripe",
+    method,
     date: today,
     card_name: md.card_name,
     rated: false,
   });
-
-  if (txnErr) {
-    console.error("transaction insert", txnErr);
-    return new Response(JSON.stringify({ error: txnErr.message }), { status: 500 });
-  }
-
-  const shipTo = shipToFromStripeSession(session);
+  if (txnErr) throw txnErr;
 
   const { data: sellerRow } = await supabase
     .from("users")
@@ -116,7 +140,8 @@ Deno.serve(async (req) => {
     .eq("id", md.seller_id)
     .maybeSingle();
   const sellerDefault = Array.isArray(sellerRow?.addresses)
-    ? sellerRow.addresses.find((a: { isDefault?: boolean }) => a.isDefault) || sellerRow.addresses[0]
+    ? sellerRow.addresses.find((a: { isDefault?: boolean }) => a.isDefault) ||
+      sellerRow.addresses[0]
     : null;
   const shipFrom = sellerDefault?.street
     ? {
@@ -135,15 +160,17 @@ Deno.serve(async (req) => {
       .select("id, addresses")
       .eq("id", md.buyer_id)
       .maybeSingle();
-    const existing = Array.isArray(buyerRow?.addresses) ? buyerRow.addresses : [];
-    const hasComplete = existing.some((a: { street?: string; zip?: string }) => a?.street && a?.zip);
+    const existingAddrs = Array.isArray(buyerRow?.addresses) ? buyerRow.addresses : [];
+    const hasComplete = existingAddrs.some(
+      (a: { street?: string; zip?: string }) => a?.street && a?.zip,
+    );
     if (!hasComplete) {
       await supabase
         .from("users")
         .update({
           addresses: [
             {
-              id: `stripe_${session.id}`,
+              id: `stripe_${idKey}`,
               label: "Home",
               name: shipTo.name,
               street: shipTo.street,
@@ -179,32 +206,35 @@ Deno.serve(async (req) => {
     ship_to: shipTo,
     ship_from: shipFrom,
   });
+  if (shipErr) throw shipErr;
 
-  if (shipErr) {
-    console.error("shipment insert", shipErr);
-    return new Response(JSON.stringify({ error: shipErr.message }), { status: 500 });
-  }
+  await supabase.from("listings").delete().eq("id", md.listing_id);
 
-  const { error: delErr } = await supabase
-    .from("listings")
-    .delete()
-    .eq("id", md.listing_id);
+  await supabase.from("notifications").insert([
+    {
+      id: `n_buy_s_${shipmentId}`,
+      recipient_id: md.seller_id,
+      type: "sale",
+      is_read: false,
+      title: "Item sold — time to ship",
+      body: `${md.card_name} sold. Generate your USPS label in the Ship tab.`,
+      link: "shipping",
+      related_user_id: md.buyer_id,
+    },
+    {
+      id: `n_buy_b_${shipmentId}`,
+      recipient_id: md.buyer_id,
+      type: "purchase",
+      is_read: false,
+      title: "Purchase confirmed",
+      body: `You bought ${md.card_name}. Tracking will appear when the seller ships.`,
+      link: "shipping",
+      related_user_id: md.seller_id,
+    },
+  ]);
+}
 
-  if (delErr) {
-    console.error("listing delete", delErr);
-  }
-
-  const { error: evErr } = await supabase.from("stripe_events").insert({ id: event.id });
-  if (evErr && (evErr as { code?: string }).code !== "23505") {
-    console.error("stripe_events insert", evErr);
-  }
-
-  return new Response(JSON.stringify({ received: true }), {
-    headers: { "Content-Type": "application/json" },
-  });
-});
-
-function shipToFromStripeSession(session: Stripe.Checkout.Session) {
+function shipToFromCheckout(session: Stripe.Checkout.Session) {
   const details = session.shipping_details;
   const addr = details?.address;
   if (!addr?.line1 || !addr.city || !addr.state || !addr.postal_code) return null;
@@ -216,4 +246,25 @@ function shipToFromStripeSession(session: Stripe.Checkout.Session) {
     zip: addr.postal_code,
     country: addr.country || "US",
   };
+}
+
+function shipToFromPaymentIntent(pi: Stripe.PaymentIntent) {
+  const details = pi.shipping;
+  const addr = details?.address;
+  if (!addr?.line1 || !addr.city || !addr.state || !addr.postal_code) return null;
+  return {
+    name: details?.name || "Buyer",
+    street: [addr.line1, addr.line2].filter(Boolean).join(", "),
+    city: addr.city,
+    state: addr.state,
+    zip: addr.postal_code,
+    country: addr.country || "US",
+  };
+}
+
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
 }

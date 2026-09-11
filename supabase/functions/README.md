@@ -18,11 +18,17 @@ Set:
 supabase login
 supabase link --project-ref YOUR_PROJECT_REF
 supabase db push
-supabase functions deploy create-checkout-session
-supabase functions deploy stripe-webhook
-supabase functions deploy create-shipping-label
+supabase functions deploy create-checkout-session --use-api --no-verify-jwt
+supabase functions deploy stripe-webhook --use-api --no-verify-jwt
+supabase functions deploy create-shipping-label --use-api --no-verify-jwt
+supabase functions deploy create-payment-intent --use-api --no-verify-jwt
+supabase functions deploy create-connect-account --use-api --no-verify-jwt
+supabase functions deploy shippo-webhook --use-api --no-verify-jwt
 ```
 
+Stripe webhook events: `checkout.session.completed`, `payment_intent.succeeded`
+
+Shippo webhook URL: `https://YOUR_PROJECT_REF.supabase.co/functions/v1/shippo-webhook` (track_updated)
 ```bash
 npx supabase secrets set SHIPPO_API_TOKEN=shippo_test_...
 ```

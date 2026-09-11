@@ -37,6 +37,8 @@ import {
 } from "./lib/marketplaceApi";
 import { startStripeCheckout } from "./lib/stripeCheckout";
 import { createShippingLabel } from "./lib/shippoLabel";
+import { startStripeConnectOnboarding } from "./lib/stripeConnect";
+import PaymentSheetModal from "./PaymentSheetModal";
 import { fetchEbayMarketValue, getCachedMarketValue } from "./lib/ebayMarketValue";
 import {
   DEFAULT_USPS_RATES,
@@ -355,7 +357,18 @@ const NOTIF_TYPES = {
 const SEED_NOTIFICATIONS = [];
 
 const TRACKING_STEPS = ["Label Created","Accepted","In Transit","Out for Delivery","Delivered"];
-const trackingStepIndex = (status) => status==="delivered"?4:status==="out_for_delivery"?3:status==="in_transit"?2:status==="accepted"?1:0;
+const trackingStepIndex = (status) =>
+  status === "delivered" ? 4
+  : status === "out_for_delivery" ? 3
+  : status === "in_transit" ? 2
+  : status === "accepted" || status === "label_created" ? 1
+  : 0;
+const shipmentStatusLabel = (status) =>
+  status === "delivered" ? "Delivered"
+  : status === "out_for_delivery" ? "Out for Delivery"
+  : status === "in_transit" ? "In Transit"
+  : status === "accepted" || status === "label_created" ? "Label created — ready to drop off"
+  : "Label Pending";
 
 
 const DEFAULT_USER_ID = "u1";
@@ -749,10 +762,10 @@ function CheckoutModal({ card, seller, onPayWithCard, onClose }) {
               </div>
             </div>
             <div style={{ background:"#EAF1FA", borderRadius:12, padding:"10px 14px", marginBottom:20, fontSize:11, color:"#555", lineHeight:1.5 }}>
-              You will pay with your <strong>debit or credit card</strong> on Stripe’s secure checkout. Stripe will ask for the <strong>full US shipping address</strong> this figure should be mailed to — that address is saved on the order and printed on the seller’s USPS label.
+              Next step opens Stripe&apos;s <strong>Payment Sheet</strong> (Apple Pay / card). Card numbers stay with Stripe — never saved in In Hand. Enter your US ship-to address there so the seller can print your label.
             </div>
             <Btn onClick={handlePay} disabled={busy} style={{ background:"#2C3E50", color:"#fff", width:"100%", opacity:busy?0.7:1 }}>
-              {busy ? "Opening Stripe…" : `Pay $${fmt(grandTotal)} with card`}
+              {busy ? "Opening…" : `Continue to Payment Sheet · $${fmt(grandTotal)}`}
             </Btn>
         </>
       </div>
@@ -1813,7 +1826,7 @@ function LabelModal({ shipment, rate, seller, buyer, sellerAddresses, onGenerate
               ))}
             </div>
 
-            <Btn onClick={()=>{ onGenerate(generatedTN); onClose(); }} style={{ background:"#00b894",color:"#fff",width:"100%" }}>
+            <Btn onClick={()=>{ onGenerate(generatedTN, { labelUrl, carrier: "USPS" }); onClose(); }} style={{ background:"#00b894",color:"#fff",width:"100%" }}>
               Done — I've Shipped It ✓
             </Btn>
           </>
@@ -3806,6 +3819,7 @@ function AppShell({ onSignOut, authUser }) {
   const [editingCard, setEditingCard] = useState(null);
   const [showAddUser, setShowAddUser] = useState(false);
   const [checkoutCard, setCheckoutCard] = useState(null);
+  const [paymentSheet, setPaymentSheet] = useState(null); // { mode: 'purchase'|'trade_fee', card?, amountCents, ... }
   const [trackingModal, setTrackingModal] = useState(null);
   const [addTrackingFor, setAddTrackingFor] = useState(null);
   const [marketModal, setMarketModal] = useState(null);
@@ -4334,6 +4348,69 @@ function AppShell({ onSignOut, authUser }) {
       }
     }
 
+    // Dual shipments: each party ships the figure(s) they're sending
+    const tradeTxn = txns.find((t) => t.type === "trade") || txns[txns.length - 1];
+    const offerNames = offeredCards.map((c) => c.name).join(" + ");
+    const offerValue = offeredCards.reduce((s, c) => s + (c.value || 0), 0);
+    const shipA = {
+      id: `sh_trade_${proposal.id}_a`,
+      txnId: tradeTxn.id,
+      trackingNumber: "",
+      carrier: "USPS Ground",
+      status: "label_pending",
+      estimatedDelivery: "",
+      shippingCost: getShippingRate(offerValue)?.price || 0,
+      shippingLabel: "",
+      fromUser: proposal.proposerId,
+      toUser: proposal.receiverId,
+      figureName: offerNames,
+      figureValue: offerValue,
+      fundsReleased: false,
+      autoReleased: false,
+      deliveredAt: null,
+      disputeFrozen: false,
+      events: [],
+    };
+    const shipB = {
+      id: `sh_trade_${proposal.id}_b`,
+      txnId: tradeTxn.id,
+      trackingNumber: "",
+      carrier: "USPS Ground",
+      status: "label_pending",
+      estimatedDelivery: "",
+      shippingCost: getShippingRate(targetCard.value)?.price || 0,
+      shippingLabel: "",
+      fromUser: proposal.receiverId,
+      toUser: proposal.proposerId,
+      figureName: targetCard.name,
+      figureValue: targetCard.value,
+      fundsReleased: false,
+      autoReleased: false,
+      deliveredAt: null,
+      disputeFrozen: false,
+      events: [],
+    };
+    const tradeShips = [shipA, shipB];
+    if (supabase) {
+      for (const s of tradeShips) {
+        const { error: shErr } = await upsertShipment(s);
+        if (shErr) console.error("In Hand: trade shipment insert failed", shErr);
+      }
+      const nBase = Date.now();
+      for (const uid of [proposal.proposerId, proposal.receiverId]) {
+        await insertNotification({
+          id: `n_trade_ship_${proposal.id}_${uid}_${nBase}`,
+          recipientId: uid,
+          type: "trade_accepted",
+          read: false,
+          title: "🤝 Trade accepted! Time to ship your figure",
+          body: "Generate your USPS shipping label in the Ship tab.",
+          link: "shipping",
+          relatedUserId: uid === proposal.proposerId ? proposal.receiverId : proposal.proposerId,
+        });
+      }
+    }
+
     setDb((d) => {
       const newCards = d.cards.map((c) => {
         if (c.id === targetCard.id) return { ...c, ownerId: proposal.proposerId, wantsTrade: false, wantsBuy: false };
@@ -4345,11 +4422,26 @@ function AppShell({ onSignOut, authUser }) {
         if (u.id === proposal.receiverId) return { ...u, walletBalance: parseFloat((u.walletBalance - TRADE_FEE).toFixed(2)) };
         return u;
       });
+      const ts = new Date().toISOString().slice(0, 16).replace("T", " ");
+      const localNotifs = [proposal.proposerId, proposal.receiverId]
+        .filter((uid) => uid === activeUserId)
+        .map((uid) => ({
+          id: `n_trade_ship_${proposal.id}_${uid}_local`,
+          type: "trade_accepted",
+          read: false,
+          ts,
+          title: "🤝 Trade accepted! Time to ship your figure",
+          body: "Generate your USPS shipping label in the Ship tab.",
+          link: "shipping",
+          userId: uid === proposal.proposerId ? proposal.receiverId : proposal.proposerId,
+        }));
       return {
         ...d,
         users: newUsers,
         cards: newCards,
         transactions: [...txns, ...d.transactions],
+        shipments: [...tradeShips, ...(d.shipments || [])],
+        notifications: [...localNotifs, ...(d.notifications || [])],
         tradeProposals: (d.tradeProposals || []).map((p) => (p.id === proposal.id ? { ...p, status: "completed", topupAgreed: topup, topupStatus: topup > 0 ? "accepted" : p.topupStatus } : p)),
       };
     });
@@ -4359,7 +4451,10 @@ function AppShell({ onSignOut, authUser }) {
   const handleAcceptTradeProposal = async (proposal) => {
     const agreed = { ...proposal, topupAgreed: proposal.topupSuggested, topupStatus: proposal.topupSuggested > 0 ? "accepted" : proposal.topupStatus };
     const ok = await executeTradeSwap(agreed);
-    if (ok) notify("🤝 Trade accepted!");
+    if (ok) {
+      notify("🤝 Trade accepted! Time to ship — open the Ship tab");
+      setTab("shipping");
+    }
   };
 
   const handleDeclineTradeProposal = async (proposalId) => {
@@ -4635,18 +4730,45 @@ function AppShell({ onSignOut, authUser }) {
   };
 
   const handlePurchaseWithCard = async (card) => {
+    const shippingRate = getShippingRate(card.value) || { price: 0 };
+    const fee = parseFloat((card.value * PLATFORM_FEE).toFixed(2));
+    const shipping = Number(shippingRate.price) || 0;
+    const insurance = getInsuranceCost(card.value);
+    const grandTotal = parseFloat((card.value + fee + shipping + insurance).toFixed(2));
+    const defaultAddr = myUser?.addresses?.find((a) => a.isDefault) || myUser?.addresses?.[0];
     setCheckoutCard(null);
+    setPaymentSheet({
+      mode: "purchase",
+      listingId: card.id,
+      card,
+      amountCents: Math.round(grandTotal * 100),
+      amountLabel: `$${fmt(grandTotal)}`,
+      requireShipping: true,
+      defaultShipping: defaultAddr
+        ? { name: defaultAddr.name, street: defaultAddr.street, city: defaultAddr.city, state: defaultAddr.state, zip: defaultAddr.zip }
+        : { name: myUser?.username || "", street: "", city: "", state: "", zip: "" },
+    });
+  };
+
+  const handleConnectPayouts = async () => {
     try {
-      await startStripeCheckout({
-        listingId: card.id,
-        buyerId: activeUserId,
-        successUrl: `${window.location.origin}?checkout=success`,
-        cancelUrl: `${window.location.origin}?checkout=cancelled`,
-      });
+      notify("Opening Stripe Connect…");
+      const result = await startStripeConnectOnboarding();
+      if (result.accountId) {
+        setDb((d) => ({
+          ...d,
+          users: d.users.map((u) =>
+            u.id === activeUserId ? { ...u, stripeAccountId: result.accountId } : u
+          ),
+        }));
+      }
+      if (result.url) {
+        window.open(result.url, "_blank");
+        notify(result.ready ? "Stripe payout dashboard opened" : "Complete bank setup in Stripe, then return");
+      }
     } catch (err) {
-      console.error("In Hand: Stripe checkout start failed", err);
-      notify("❌ Could not start Stripe checkout. Deploy Edge Function + set secrets.");
-      setCheckoutCard(card);
+      console.error("In Hand: Connect onboarding failed", err);
+      notify(`❌ ${err?.message || "Could not start Stripe Connect"}`);
     }
   };
 
@@ -4673,7 +4795,84 @@ function AppShell({ onSignOut, authUser }) {
     notify("✅ Funds released to seller!");
   };
 
+  const handleLabelCreated = async (shipment, trackingNumber, extra = {}) => {
+    const simEvents = [
+      ...(shipment.events || []),
+      { date: new Date().toISOString().slice(0, 16).replace("T", " "), location: "Origin", description: "Shipping label created — ready to drop off" },
+    ];
+    const patch = {
+      trackingNumber,
+      status: "accepted",
+      events: simEvents,
+      shippingLabel: extra.labelUrl || shipment.shippingLabel || "",
+      carrier: extra.carrier || shipment.carrier || "USPS",
+    };
+    if (supabase) {
+      const { error } = await updateShipmentById(shipment.id, patch);
+      if (error) {
+        console.error("In Hand: label save failed", error);
+        notify("❌ Could not save label in Supabase");
+        return;
+      }
+      await insertNotification({
+        id: `n_label_partner_${shipment.id}_${Date.now()}`,
+        recipientId: shipment.toUser,
+        type: "shipping",
+        read: false,
+        title: "Your trade partner has generated their label",
+        body: `${shipment.figureName}: label created. Tracking ${trackingNumber}.`,
+        link: "shipping",
+        relatedUserId: shipment.fromUser,
+      });
+    }
+    setDb((d) => ({
+      ...d,
+      shipments: d.shipments.map((s) => (s.id === shipment.id ? { ...s, ...patch } : s)),
+    }));
+    setAddTrackingFor(null);
+    notify("🏷️ Label created — ready to drop off");
+  };
+
+  const handleMarkShipped = async (shipment) => {
+    if (!shipment?.trackingNumber) {
+      notify("Generate a label first");
+      return;
+    }
+    const events = [
+      ...(shipment.events || []),
+      { date: new Date().toISOString().slice(0, 16).replace("T", " "), location: "Origin", description: "Marked as shipped / dropped off" },
+    ];
+    if (supabase) {
+      const { error } = await updateShipmentById(shipment.id, { status: "in_transit", events });
+      if (error) {
+        console.error("In Hand: mark shipped failed", error);
+        notify("❌ Could not update shipment");
+        return;
+      }
+      await insertNotification({
+        id: `n_shipped_${shipment.id}_${Date.now()}`,
+        recipientId: shipment.toUser,
+        type: "shipping",
+        read: false,
+        title: "📦 Your figure is on the way",
+        body: `Tracking number: ${shipment.trackingNumber}`,
+        link: "shipping",
+        relatedUserId: shipment.fromUser,
+      });
+    }
+    setDb((d) => ({
+      ...d,
+      shipments: d.shipments.map((s) => (s.id === shipment.id ? { ...s, status: "in_transit", events } : s)),
+    }));
+    notify("📦 Marked as shipped — partner notified");
+  };
+
   const handleAddTracking = async (txnId, trackingNumber) => {
+    const target = (db.shipments || []).find((s) => s.txnId === txnId || s.id === txnId);
+    if (target) {
+      await handleLabelCreated(target, trackingNumber);
+      return;
+    }
     const simEvents = [
       { date: new Date().toISOString().slice(0,16).replace("T"," "), location:"Origin", description:"Shipping label created" },
     ];
@@ -4781,6 +4980,32 @@ function AppShell({ onSignOut, authUser }) {
     const interval = setInterval(runAutoRelease, 60000);
     return () => clearInterval(interval);
   }, [dbLoaded]);
+
+  // After delivery + 7 days, prompt rating if not yet rated
+  useEffect(() => {
+    if (!dbLoaded || !activeUserId) return;
+    const due = (db.shipments || []).filter((s) => {
+      if (s.status !== "delivered" || !s.deliveredAt) return false;
+      const days = (Date.now() - new Date(s.deliveredAt).getTime()) / 86400000;
+      if (days < 7) return false;
+      const txn = (db.transactions || []).find((t) => t.id === s.txnId);
+      if (!txn || txn.rated) return false;
+      const iAmParty = s.fromUser === activeUserId || s.toUser === activeUserId;
+      if (!iAmParty) return false;
+      const already = (db.ratings || []).some((r) => r.txnId === txn.id && r.fromUserId === activeUserId);
+      return !already;
+    });
+    if (!due.length || ratingModal) return;
+    const s = due[0];
+    const txn = db.transactions.find((t) => t.id === s.txnId);
+    const otherId = s.fromUser === activeUserId ? s.toUser : s.fromUser;
+    const otherUser = getUser(otherId);
+    if (txn && otherUser) {
+      setRatingModal({ txn, otherUser, isBuyer: s.toUser === activeUserId });
+      notify("⭐ Rate your trade partner to finish this order");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dbLoaded, db.shipments, db.ratings, activeUserId]);
 
 
   // ── MESSAGING ──
@@ -4995,6 +5220,9 @@ function AppShell({ onSignOut, authUser }) {
   const pendingIncoming = myTradeProposals.filter((p) => p.status === "pending" && p.receiverId === activeUserId).length;
   const pendingSent = myTradeProposals.filter((p) => p.status === "pending" && p.proposerId === activeUserId).length;
   const completedTrades = myTradeProposals.filter((p) => p.status === "completed").length;
+  const shipActionCount = (db.shipments || []).filter(
+    (s) => s.fromUser === activeUserId && (!s.trackingNumber || s.status === "accepted" || s.status === "label_created")
+  ).length;
 
   const txnColor = t => t.type==="purchase"?"#ff6b6b":(t.type==="sale"||t.type==="topup")?"#00b894":"#3A7BD5";
   const txnSign  = t => t.buyerId===activeUserId?"-":"+";
@@ -5013,6 +5241,30 @@ function AppShell({ onSignOut, authUser }) {
       )}
       {showAddUser && <AddUserModal onSave={handleAddUser} onClose={()=>setShowAddUser(false)} />}
       {checkoutCard && <CheckoutModal card={checkoutCard} seller={getUser(checkoutCard.ownerId)} onPayWithCard={()=>handlePurchaseWithCard(checkoutCard)} onClose={()=>setCheckoutCard(null)} />}
+      {paymentSheet && (
+        <PaymentSheetModal
+          title={paymentSheet.mode === "trade_fee" ? "Pay trade fee" : "Pay with card"}
+          subtitle="Secure Stripe Payment Sheet — Apple Pay / cards. We never store card numbers."
+          amountCents={paymentSheet.amountCents}
+          amountLabel={paymentSheet.amountLabel}
+          purpose={paymentSheet.mode === "trade_fee" ? "trade_fee" : "purchase"}
+          listingId={paymentSheet.listingId}
+          requireShipping={!!paymentSheet.requireShipping}
+          defaultShipping={paymentSheet.defaultShipping}
+          metadata={paymentSheet.metadata || {}}
+          onSuccess={async () => {
+            setPaymentSheet(null);
+            if (paymentSheet.mode === "purchase") {
+              notify("✅ Payment submitted — order appears after Stripe confirms");
+              setTimeout(() => { if (supabase) reloadFromSupabase?.(); }, 2500);
+              setTab("shipping");
+            } else {
+              notify("✅ Trade fee paid");
+            }
+          }}
+          onClose={() => setPaymentSheet(null)}
+        />
+      )}
       {marketModal && <MarketValueModal card={marketModal} onClose={()=>setMarketModal(null)} />}
       {showAddressModal && <AddressModal addresses={myUser?.addresses||[]} onSave={handleSaveAddresses} onClose={()=>setShowAddressModal(false)} />}
       {showEditProfile && (
@@ -5143,7 +5395,7 @@ function AppShell({ onSignOut, authUser }) {
         const seller = getUser(s.fromUser);
         const buyer  = getUser(s.toUser);
         return <LabelModal shipment={s} rate={rate} seller={seller} buyer={buyer} sellerAddresses={myUser?.addresses||[]}
-          onGenerate={(tn) => { handleAddTracking(s.txnId || s.id, tn); }}
+          onGenerate={(tn, extra) => { handleLabelCreated(s, tn, extra || {}); }}
           onClose={() => setAddTrackingFor(null)} />;
       })()}
 
@@ -5383,7 +5635,12 @@ function AppShell({ onSignOut, authUser }) {
       {tab==="shipping" && (
         <div style={{ flex:1,overflowY:"auto",padding:"20px 20px 90px" }}>
           <div style={{ fontWeight:800,fontSize:18,color:"#2C3E50",marginBottom:4 }}>📦 Shipping & Tracking</div>
-          <div style={{ fontSize:12,color:"#bbb",marginBottom:16 }}>All shipments use USPS Ground Advantage</div>
+          <div style={{ fontSize:12,color:"#bbb",marginBottom:12 }}>All shipments use USPS Ground Advantage</div>
+          {shipActionCount > 0 && (
+            <div style={{ background:"#fff8e6",border:"1.5px solid #f9ca24",borderRadius:14,padding:"12px 14px",marginBottom:16,fontSize:12,color:"#9a6700",fontWeight:600 }}>
+              ⚠️ You have {shipActionCount} shipment{shipActionCount===1?"":"s"} waiting — generate a label or mark as shipped.
+            </div>
+          )}
 
           {/* USPS rates info card */}
           <div style={{ background:"linear-gradient(135deg,#2C3E50,#2d3561)",borderRadius:20,padding:"18px",marginBottom:20 }}>
@@ -5405,9 +5662,11 @@ function AppShell({ onSignOut, authUser }) {
             if(myShipments.length===0) return <div style={{ textAlign:"center",padding:"40px 0",color:"#ccc" }}><div style={{ fontSize:48,marginBottom:12 }}>📭</div><div style={{ fontWeight:700,fontSize:15 }}>No shipments yet</div></div>;
             return myShipments.map(s=>{
               const isSeller = s.fromUser===activeUserId;
-              const statusColor = s.status==="delivered"?"#00b894":s.status==="in_transit"||s.status==="accepted"?"#3A7BD5":s.status==="out_for_delivery"?"#f9ca24":"#aaa";
-              const statusLabel = s.status==="delivered"?"Delivered":s.status==="in_transit"?"In Transit":s.status==="accepted"?"Accepted":s.status==="out_for_delivery"?"Out for Delivery":"Label Pending";
+              const statusColor = s.status==="delivered"?"#00b894":s.status==="in_transit"||s.status==="accepted"||s.status==="label_created"?"#3A7BD5":s.status==="out_for_delivery"?"#f9ca24":"#aaa";
+              const statusLabel = shipmentStatusLabel(s.status);
               const stepIdx = trackingStepIndex(s.status);
+              const canDispute = s.status==="delivered" && s.toUser===activeUserId && s.deliveredAt && !s.fundsReleased && !s.disputeFrozen &&
+                ((Date.now() - new Date(s.deliveredAt).getTime()) / 86400000) <= 7;
               return (
                 <div key={s.id} style={{ background:"#fff",borderRadius:20,padding:"16px",boxShadow:"0 2px 14px rgba(0,0,0,0.06)",border:"1px solid #E4EBF2",marginBottom:14 }}>
                   {/* Header */}
@@ -5416,7 +5675,7 @@ function AppShell({ onSignOut, authUser }) {
                       <div style={{ fontWeight:800,fontSize:14,color:"#2C3E50" }}>{s.figureName}</div>
                       <div style={{ fontSize:11,color:"#aaa",marginTop:2 }}>{isSeller?"You're sending":"You're receiving"} · {s.carrier}</div>
                     </div>
-                    <span style={{ fontSize:10,background:`${statusColor}18`,color:statusColor,borderRadius:8,padding:"3px 10px",fontWeight:800 }}>{statusLabel}</span>
+                    <span style={{ fontSize:10,background:`${statusColor}18`,color:statusColor,borderRadius:8,padding:"3px 10px",fontWeight:800,maxWidth:140,textAlign:"center",lineHeight:1.3 }}>{statusLabel}</span>
                   </div>
 
                   {/* Mini progress */}
@@ -5445,16 +5704,29 @@ function AppShell({ onSignOut, authUser }) {
                   )}
 
                   {/* Actions */}
-                  <div style={{ display:"flex",gap:8 }}>
+                  <div style={{ display:"flex",gap:8,flexWrap:"wrap" }}>
                     {isSeller && !s.trackingNumber && (
-                      <button onClick={()=>setAddTrackingFor(s)} style={{ flex:2,background:"linear-gradient(135deg,#2C3E50,#2d3561)",border:"none",borderRadius:12,padding:"9px",fontWeight:700,fontSize:12,color:"#fff",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6 }}>
-                        🏷️ Generate Label
+                      <button type="button" onClick={()=>setAddTrackingFor(s)} style={{ flex:2,minWidth:140,background:"linear-gradient(135deg,#2C3E50,#2d3561)",border:"none",borderRadius:12,padding:"9px",fontWeight:700,fontSize:12,color:"#fff",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6 }}>
+                        🏷️ Generate Shipping Label
                       </button>
                     )}
-                    {isSeller && s.trackingNumber && !s.fundsReleased && (
-                      <div style={{ flex:1,background:"#f0fff8",borderRadius:12,padding:"9px",fontWeight:700,fontSize:11,color:"#00b894",textAlign:"center" }}>📮 Shipped</div>
+                    {isSeller && s.trackingNumber && (s.status==="accepted" || s.status==="label_created") && (
+                      <button type="button" onClick={()=>handleMarkShipped(s)} style={{ flex:2,minWidth:140,background:"#3A7BD5",border:"none",borderRadius:12,padding:"9px",fontWeight:800,fontSize:12,color:"#fff",cursor:"pointer" }}>
+                        Mark as Shipped
+                      </button>
                     )}
-                    <button onClick={()=>setTrackingModal(s)} style={{ flex:1,background:"#EEF2F7",border:"none",borderRadius:12,padding:"9px",fontWeight:700,fontSize:12,color:"#555",cursor:"pointer" }}>Track</button>
+                    {isSeller && s.status==="in_transit" && !s.fundsReleased && (
+                      <div style={{ flex:1,background:"#f0fff8",borderRadius:12,padding:"9px",fontWeight:700,fontSize:11,color:"#00b894",textAlign:"center" }}>📮 On the way</div>
+                    )}
+                    <button type="button" onClick={()=>setTrackingModal(s)} style={{ flex:1,minWidth:80,background:"#EEF2F7",border:"none",borderRadius:12,padding:"9px",fontWeight:700,fontSize:12,color:"#555",cursor:"pointer" }}>Track</button>
+                    {canDispute && (
+                      <button type="button" onClick={()=>{
+                        const txn = db.transactions.find(t=>t.id===s.txnId);
+                        if (txn) setDisputeModal({ txn, shipment:s, disputeKind: txn.type==="trade"?"trade":"purchase" });
+                      }} style={{ flex:1,minWidth:100,background:"#fff0f0",border:"2px solid #ff6b6b",borderRadius:12,padding:"9px",fontWeight:700,fontSize:11,color:"#ff6b6b",cursor:"pointer" }}>
+                        Dispute (7d)
+                      </button>
+                    )}
                     {s.fundsReleased && <div style={{ flex:1,background:"#f0fff8",borderRadius:12,padding:"9px",fontWeight:700,fontSize:12,color:"#00b894",textAlign:"center" }}>✅ {s.autoReleased?"Auto-paid":"Paid out"}</div>}
                   </div>
 
@@ -5674,9 +5946,26 @@ function AppShell({ onSignOut, authUser }) {
                         <button type="button" onClick={()=>openThread(otherId, targetCard)} style={{ flex:2,background:"#EEF2F7",border:"none",borderRadius:12,padding:"11px",fontWeight:700,fontSize:12,color:"#3A7BD5",cursor:"pointer" }}>💬 Message</button>
                       </div>
                     )}
-                    {isDone && (
-                      <div style={{ textAlign:"center",fontSize:11,color:"#aaa" }}>Trade complete · Rate {other?.username?.split("_")[0]} ⭐</div>
-                    )}
+                    {isDone && (() => {
+                      const myOutbound = (db.shipments || []).find(
+                        (s) => s.txnId && (db.transactions || []).some((t) => t.id === s.txnId && t.type === "trade" && t.cardName?.includes(targetCard.name)) && s.fromUser === activeUserId
+                      ) || (db.shipments || []).find((s) => s.fromUser === activeUserId && !s.trackingNumber && (s.figureName === targetCard.name || (offeredCards.some((c) => s.figureName?.includes(c.name)))));
+                      const needsLabel = myOutbound && !myOutbound.trackingNumber;
+                      return (
+                        <div style={{ display:"flex",flexDirection:"column",gap:8 }}>
+                          <div style={{ textAlign:"center",fontSize:11,color:"#00b894",fontWeight:700 }}>🤝 Trade accepted — time to ship</div>
+                          {needsLabel ? (
+                            <button type="button" onClick={()=>setAddTrackingFor(myOutbound)} style={{ width:"100%",background:"linear-gradient(135deg,#2C3E50,#2d3561)",border:"none",borderRadius:12,padding:"12px",fontWeight:800,fontSize:13,color:"#fff",cursor:"pointer" }}>
+                              🏷️ Generate Shipping Label
+                            </button>
+                          ) : (
+                            <button type="button" onClick={()=>setTab("shipping")} style={{ width:"100%",background:"#EAF1FA",border:"none",borderRadius:12,padding:"11px",fontWeight:700,fontSize:12,color:"#3A7BD5",cursor:"pointer" }}>
+                              Open Ship tab →
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 );
               })}
@@ -6237,6 +6526,7 @@ function AppShell({ onSignOut, authUser }) {
               { icon:"✏️", label:"Edit Profile",        sub:`${myUser?.username} · ${myUser?.location||"Location not set"}`, action:()=>openEditProfile("profile") },
               { icon:"🎭", label:"Change Avatar",       sub:`Current: ${myUser?.avatar}`, action:()=>openEditProfile("avatar") },
               { icon:"⭐", label:"Wishlist Tags",       sub:myUser?.wishlist?.length ? myUser.wishlist.map(t=>`#${t}`).join(" ") : "None set — tap to add", action:()=>openEditProfile("wishlist") },
+              { icon:"🏦", label:"Seller payouts (Stripe Connect)", sub: myUser?.stripeAccountId ? "Bank onboarding started — tap to continue / manage" : "Set up your bank account for sale payouts", action:()=>handleConnectPayouts() },
               { icon:"📍", label:"Shipping Addresses",  sub: myUser?.addresses?.length ? myUser.addresses.map(a=>`${a.label}: ${a.street}`).join(" · ") : "No addresses saved", action:()=>setShowAddressModal(true) },
               { icon:"🔔", label:"Notifications",       sub:"Trade alerts, delivery updates", action:()=>setShowNotifications(true) },
               { icon:"🔒", label:"Privacy & Security",  sub:"Export data, deactivate, delete account", action:()=>openEditProfile("danger") },
@@ -6305,7 +6595,14 @@ function AppShell({ onSignOut, authUser }) {
       <nav className="inhand-bottom-nav" aria-label="Primary">
         {BOTTOM_NAV_ITEMS.map(([id, label, icon]) => (
           <button key={id} type="button" data-active={tab === id ? "true" : "false"} onClick={() => goToTab(id)}>
-            <span aria-hidden="true">{icon}</span>
+            <span aria-hidden="true" style={{ position:"relative" }}>
+              {icon}
+              {id === "shipping" && shipActionCount > 0 && (
+                <span style={{ position:"absolute", top:-6, right:-10, minWidth:16, height:16, borderRadius:8, background:"#ff6b6b", color:"#fff", fontSize:9, fontWeight:800, display:"inline-flex", alignItems:"center", justifyContent:"center", padding:"0 4px" }}>
+                  {shipActionCount > 9 ? "9+" : shipActionCount}
+                </span>
+              )}
+            </span>
             <span>{label}</span>
           </button>
         ))}

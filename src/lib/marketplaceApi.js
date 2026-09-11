@@ -37,6 +37,8 @@ function shipmentToRow(s) {
     delivered_at: s.deliveredAt || null,
     dispute_frozen: !!s.disputeFrozen,
     events: s.events || [],
+    ship_to: s.shipTo || null,
+    ship_from: s.shipFrom || null,
   };
 }
 
@@ -107,6 +109,10 @@ export async function updateShipmentById(shipmentId, patch) {
   if (patch.autoReleased !== undefined) row.auto_released = !!patch.autoReleased;
   if (patch.deliveredAt !== undefined) row.delivered_at = patch.deliveredAt;
   if (patch.disputeFrozen !== undefined) row.dispute_frozen = !!patch.disputeFrozen;
+  if (patch.shippingLabel !== undefined) row.shipping_label = patch.shippingLabel;
+  if (patch.carrier !== undefined) row.carrier = patch.carrier;
+  if (patch.shipFrom !== undefined) row.ship_from = patch.shipFrom;
+  if (patch.shipTo !== undefined) row.ship_to = patch.shipTo;
   return supabase.from("shipments").update(row).eq("id", shipmentId);
 }
 

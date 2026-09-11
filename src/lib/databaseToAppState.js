@@ -27,6 +27,7 @@ export function userFromRow(r) {
     flagCount: r.flag_count ?? 0,
     verified: !!r.verified,
     isAdmin: !!r.is_admin,
+    stripeAccountId: r.stripe_account_id || null,
   };
 }
 
