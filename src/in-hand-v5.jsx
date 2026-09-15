@@ -5030,7 +5030,7 @@ function AppShell({ onSignOut, authUser }) {
       setRatingModal({ txn, otherUser, isBuyer: s.toUser === activeUserId });
       notify("⭐ Rate your trade partner to finish this order");
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- prompt once when delivered+7d; avoid reopening on every db tick
   }, [dbLoaded, db.shipments, db.ratings, activeUserId]);
 
 

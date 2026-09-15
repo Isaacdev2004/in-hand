@@ -100,7 +100,7 @@ export default function PaymentSheetModal({
         /* ignore */
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount once per amount/purpose; shipping filled on Pay
   }, [amountCents, purpose, listingId, requireShipping]);
 
   const ensureElements = async () => {

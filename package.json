@@ -24,6 +24,12 @@
     "cap:open:ios": "npx cap open ios",
     "cap:copy": "npx cap copy"
   },
+  "eslintConfig": {
+    "extends": [
+      "react-app",
+      "react-app/jest"
+    ]
+  },
   "browserslist": {
     "production": [
       ">0.2%",
