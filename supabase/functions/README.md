@@ -23,10 +23,13 @@ supabase functions deploy stripe-webhook --use-api --no-verify-jwt
 supabase functions deploy create-shipping-label --use-api --no-verify-jwt
 supabase functions deploy create-payment-intent --use-api --no-verify-jwt
 supabase functions deploy create-connect-account --use-api --no-verify-jwt
+supabase functions deploy transfer-seller-payout --use-api --no-verify-jwt
 supabase functions deploy shippo-webhook --use-api --no-verify-jwt
 ```
 
 Stripe webhook events: `checkout.session.completed`, `payment_intent.succeeded`
+
+After escrow release, `transfer-seller-payout` moves the seller’s net to their Connect Express account; Express bank payouts use a ~2 business-day schedule.
 
 Shippo webhook URL: `https://YOUR_PROJECT_REF.supabase.co/functions/v1/shippo-webhook` (track_updated)
 ```bash

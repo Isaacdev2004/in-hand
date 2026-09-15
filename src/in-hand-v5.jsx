@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { supabase } from "./lib/supabaseClient";
 import { Capacitor } from "@capacitor/core";
-import { getAuthRedirectUrl, handleSupabaseAuthDeepLink } from "./lib/authRedirect";
+import { getAuthRedirectUrl, handleSupabaseAuthDeepLink, isPasswordRecoveryUrl } from "./lib/authRedirect";
 import { getListingShareUrl, parseListingIdFromUrl, tryOpenListingInApp } from "./lib/shareLinks";
 import { fetchAppDatabaseShape, userFromRow } from "./lib/databaseToAppState";
 import {
@@ -37,7 +37,7 @@ import {
 } from "./lib/marketplaceApi";
 import { startStripeCheckout } from "./lib/stripeCheckout";
 import { createShippingLabel } from "./lib/shippoLabel";
-import { startStripeConnectOnboarding } from "./lib/stripeConnect";
+import { startStripeConnectOnboarding, transferSellerPayout } from "./lib/stripeConnect";
 import PaymentSheetModal from "./PaymentSheetModal";
 import { fetchEbayMarketValue, getCachedMarketValue } from "./lib/ebayMarketValue";
 import {
@@ -2974,8 +2974,8 @@ function AuthScreen({ onAuth }) {
         redirectTo: getAuthRedirectUrl(),
       });
       if (resetErr) throw resetErr;
-      setInfo("If that email is registered, we sent a reset link. Check your inbox and spam.");
-      setMode("login");
+      setInfo("If that email is registered, we sent a reset link. On iPhone it opens In Hand so you can set a new password.");
+      setMode("reset");
     } catch (err) {
       setError(err?.message || "Could not send reset email.");
     } finally {
@@ -2996,15 +2996,15 @@ function AuthScreen({ onAuth }) {
       `}</style>
 
       {/* Logo */}
-      <div style={{ textAlign:"center", marginBottom:40, animation:"fadeUp 0.4s ease" }}>
-        <div style={{ width:124, height:124, borderRadius:30, overflow:"hidden", margin:"0 auto 16px", boxShadow:"0 8px 32px rgba(0,0,0,0.25)", background:"#1a1d21" }}>
-              <img src={LOGO_IMG} alt="in-HAND™" style={{ width:"100%", height:"100%", objectFit:"contain" }} />
-            </div>
-        <div style={{ fontSize:12, color:"#bbb", fontWeight:600, marginTop:4, letterSpacing:1 }}>ACTION FIGURE EXCHANGE</div>
+      <div className="inhand-auth-brand" style={{ textAlign:"center", marginBottom:mode==="signup"?16:24, animation:"fadeUp 0.4s ease", flexShrink:0 }}>
+        <div className="inhand-auth-logo">
+          <img src={LOGO_IMG} alt="in-HAND™" />
+        </div>
+        <div style={{ fontSize:11, color:"#bbb", fontWeight:600, marginTop:2, letterSpacing:1 }}>ACTION FIGURE EXCHANGE</div>
       </div>
 
       {/* Card */}
-      <div style={{ background:"#fff", borderRadius:28, padding:"28px 24px", width:"100%", boxShadow:"0 8px 40px rgba(0,0,0,0.08)", animation:"fadeUp 0.5s ease 0.1s both" }}>
+      <div style={{ background:"#fff", borderRadius:24, padding:mode==="signup"?"20px 18px":"24px 20px", width:"100%", boxShadow:"0 8px 40px rgba(0,0,0,0.08)", animation:"fadeUp 0.5s ease 0.1s both", flexShrink:0 }}>
 
         {/* ── LOGIN ── */}
         {mode==="login" && (
@@ -3034,28 +3034,28 @@ function AuthScreen({ onAuth }) {
         {/* ── SIGNUP ── */}
         {mode==="signup" && (
           <>
-            <div style={{ fontWeight:800, fontSize:22, color:"#2C3E50", marginBottom:6 }}>Create account</div>
-            <div style={{ fontSize:13, color:"#aaa", marginBottom:20 }}>Join the collector community</div>
+            <div style={{ fontWeight:800, fontSize:20, color:"#2C3E50", marginBottom:4 }}>Create account</div>
+            <div style={{ fontSize:12, color:"#aaa", marginBottom:14 }}>Join the collector community</div>
 
             {/* Avatar picker */}
-            <div style={{ marginBottom:16 }}>
-              <div style={{ fontSize:11, fontWeight:700, color:"#aaa", marginBottom:8, letterSpacing:0.8 }}>PICK YOUR AVATAR</div>
-              <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+            <div style={{ marginBottom:12 }}>
+              <div style={{ fontSize:10, fontWeight:700, color:"#aaa", marginBottom:6, letterSpacing:0.8 }}>PICK YOUR AVATAR</div>
+              <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
                 {AVATARS.map(a=>(
-                  <div key={a} onClick={()=>setF("avatar",a)} style={{ width:40, height:40, borderRadius:12, background:form.avatar===a?"#2C3E50":"#EEF2F7", display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, cursor:"pointer", transition:"all 0.15s", border:form.avatar===a?"2px solid #2C3E50":"2px solid transparent" }}>{a}</div>
+                  <div key={a} onClick={()=>setF("avatar",a)} style={{ width:36, height:36, borderRadius:10, background:form.avatar===a?"#2C3E50":"#EEF2F7", display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, cursor:"pointer", transition:"all 0.15s", border:form.avatar===a?"2px solid #2C3E50":"2px solid transparent" }}>{a}</div>
                 ))}
               </div>
             </div>
 
-            <div style={{ display:"flex", flexDirection:"column", gap:12, marginBottom:16 }}>
+            <div style={{ display:"flex", flexDirection:"column", gap:10, marginBottom:12 }}>
               <input value={form.username} onChange={e=>setF("username",e.target.value)} placeholder="Username (e.g. RetroCollector88)" style={IS_AUTH} />
               <input value={form.email} onChange={e=>setF("email",e.target.value)} placeholder="Email address" type="email" style={IS_AUTH} />
               <input value={form.password} onChange={e=>setF("password",e.target.value)} placeholder="Password (min 8 characters)" type="password" style={IS_AUTH} />
             </div>
 
             {/* Terms */}
-            <div style={{ background:"#f9f9f9", borderRadius:12, padding:"10px 14px", marginBottom:16, fontSize:11, color:"#888", lineHeight:1.5 }}>
-              By signing up you agree to our <span style={{ color:"#3A7BD5", fontWeight:700, cursor:"pointer" }}>Terms of Service</span> and <span style={{ color:"#3A7BD5", fontWeight:700, cursor:"pointer" }}>Privacy Policy</span>. All transactions are protected by In Hand escrow.
+            <div style={{ background:"#f9f9f9", borderRadius:12, padding:"8px 12px", marginBottom:12, fontSize:10, color:"#888", lineHeight:1.45 }}>
+              By signing up you agree to our <span style={{ color:"#3A7BD5", fontWeight:700, cursor:"pointer" }}>Terms of Service</span> and <span style={{ color:"#3A7BD5", fontWeight:700, cursor:"pointer" }}>Privacy Policy</span>. Escrow protects every deal.
             </div>
 
             {error && <div style={{ color:"#ff6b6b", fontSize:12, fontWeight:600, marginBottom:12 }}>⚠️ {error}</div>}
@@ -3102,7 +3102,7 @@ function AuthScreen({ onAuth }) {
         {mode==="forgot" && (
           <>
             <div style={{ fontWeight:800, fontSize:22, color:"#2C3E50", marginBottom:6 }}>Reset password</div>
-            <div style={{ fontSize:13, color:"#aaa", marginBottom:24 }}>Enter your email and we will send a reset link</div>
+            <div style={{ fontSize:13, color:"#aaa", marginBottom:24 }}>Enter your email — we send a link that opens In Hand</div>
             <input value={form.email} onChange={e=>setF("email",e.target.value)} placeholder="Email address" type="email" style={{...IS_AUTH, marginBottom:16}} />
             {error && <div style={{ color:"#ff6b6b", fontSize:12, fontWeight:600, marginBottom:12 }}>⚠️ {error}</div>}
             {info && <div style={{ color:"#00b894", fontSize:12, fontWeight:600, marginBottom:12 }}>{info}</div>}
@@ -3113,7 +3113,7 @@ function AuthScreen({ onAuth }) {
               <span onClick={()=>{setMode("login");setError("");setInfo("");}} style={{ color:"#2C3E50", fontWeight:700, cursor:"pointer" }}>← Back to login</span>
             </div>
             <div style={{ marginTop:16, fontSize:11, color:"#bbb", textAlign:"center", lineHeight:1.5 }}>
-              We email a secure link (not a fake code). Use the link, then sign in with your new password.
+              Tap the email link on your phone — it redirects to the app so you can choose a new password.
             </div>
           </>
         )}
@@ -3123,7 +3123,7 @@ function AuthScreen({ onAuth }) {
           <>
             <div style={{ fontWeight:800, fontSize:22, color:"#2C3E50", marginBottom:6 }}>Check your email</div>
             <div style={{ fontSize:13, color:"#aaa", marginBottom:20, lineHeight:1.6 }}>
-              Password reset uses a <strong style={{ color:"#2C3E50" }}>link</strong> from Supabase (via your SMTP). After you set a new password in the browser tab that opens, come back here and sign in.
+              We sent a <strong style={{ color:"#2C3E50" }}>reset link</strong> to your inbox. Open it on this device — it should open <strong style={{ color:"#2C3E50" }}>In Hand</strong> so you can set a new password, then sign in.
             </div>
             {error && <div style={{ color:"#ff6b6b", fontSize:12, fontWeight:600, marginBottom:12 }}>⚠️ {error}</div>}
             <button onClick={()=>{ setMode("login"); setError(""); setInfo(""); }} style={{ width:"100%", background:"#2C3E50", border:"none", borderRadius:14, padding:"14px", color:"#fff", fontWeight:800, fontSize:15, cursor:"pointer", marginBottom:16 }}>
@@ -3134,7 +3134,7 @@ function AuthScreen({ onAuth }) {
       </div>
 
       {/* Footer */}
-      <div style={{ marginTop:24, fontSize:11, color:"#ccc", textAlign:"center", lineHeight:1.6 }}>
+      <div style={{ marginTop:16, marginBottom:8, fontSize:11, color:"#ccc", textAlign:"center", lineHeight:1.6, flexShrink:0 }}>
         🔒 Your data is encrypted and protected<br/>
         All payments secured by Stripe escrow
       </div>
@@ -3573,7 +3573,11 @@ export default function InHand() {
 
   useEffect(() => {
     if (typeof window === "undefined" || !supabase) return undefined;
-    const syncRecovery = () => setRecoveryOpen(window.location.hash.includes("type=recovery"));
+    const syncRecovery = (url = window.location.href) => {
+      if (isPasswordRecoveryUrl(url) || window.location.hash.includes("type=recovery")) {
+        setRecoveryOpen(true);
+      }
+    };
     const completeAuthFromUrl = async () => {
       const href = window.location.href;
       const listingId = parseListingIdFromUrl(window.location.pathname);
@@ -3587,17 +3591,28 @@ export default function InHand() {
           tryOpenListingInApp(listingId);
         }
       }
-      if (href.includes("access_token=") || href.includes("code=") || href.includes("/auth/callback")) {
+      const recovery = isPasswordRecoveryUrl(href);
+      if (href.includes("access_token=") || href.includes("code=") || href.includes("/auth/callback") || recovery) {
         const ok = await handleSupabaseAuthDeepLink(href, supabase);
-        if (ok && !window.location.hash.includes("type=recovery")) {
+        if (ok && recovery) setRecoveryOpen(true);
+        if (ok && !recovery) {
           window.history.replaceState({}, document.title, window.location.pathname);
         }
       }
-      syncRecovery();
+      syncRecovery(href);
     };
     completeAuthFromUrl();
-    window.addEventListener("hashchange", syncRecovery);
-    return () => window.removeEventListener("hashchange", syncRecovery);
+    const onHash = () => syncRecovery();
+    const onAuthComplete = (e) => {
+      if (e?.detail?.recovery) setRecoveryOpen(true);
+      else syncRecovery();
+    };
+    window.addEventListener("hashchange", onHash);
+    window.addEventListener("inhand:auth-complete", onAuthComplete);
+    return () => {
+      window.removeEventListener("hashchange", onHash);
+      window.removeEventListener("inhand:auth-complete", onAuthComplete);
+    };
   }, []);
 
   useEffect(() => {
@@ -4752,7 +4767,7 @@ function AppShell({ onSignOut, authUser }) {
 
   const handleConnectPayouts = async () => {
     try {
-      notify("Opening Stripe Connect…");
+      notify("Opening Set up payouts…");
       const result = await startStripeConnectOnboarding();
       if (result.accountId) {
         setDb((d) => ({
@@ -4764,7 +4779,7 @@ function AppShell({ onSignOut, authUser }) {
       }
       if (result.url) {
         window.open(result.url, "_blank");
-        notify(result.ready ? "Stripe payout dashboard opened" : "Complete bank setup in Stripe, then return");
+        notify(result.ready ? "Payout dashboard opened" : "Complete bank setup in Stripe, then return");
       }
     } catch (err) {
       console.error("In Hand: Connect onboarding failed", err);
@@ -4782,6 +4797,11 @@ function AppShell({ onSignOut, authUser }) {
         notify(data?.error ? `❌ ${data.error}` : "❌ Could not release funds in Supabase");
         return;
       }
+      try {
+        await transferSellerPayout(shipment.id);
+      } catch (payoutErr) {
+        console.warn("In Hand: Connect transfer after escrow", payoutErr);
+      }
     }
     setDb(d=>({
       ...d,
@@ -4792,7 +4812,7 @@ function AppShell({ onSignOut, authUser }) {
       transactions: d.transactions.map(t=>t.id===txn.id?{...t,status:"completed"}:t),
       shipments: d.shipments.map(s=>s.id===shipment.id?{...s,fundsReleased:true}:s),
     }));
-    notify("✅ Funds released to seller!");
+    notify("✅ Funds released — bank payout ~2 business days after Connect transfer");
   };
 
   const handleLabelCreated = async (shipment, trackingNumber, extra = {}) => {
@@ -4936,6 +4956,12 @@ function AppShell({ onSignOut, authUser }) {
           const { data, error } = await tryReleaseEscrow(s.id, true);
           if (error || !data?.ok) {
             console.error("In Hand: auto-release RPC failed", s.id, error || data);
+            continue;
+          }
+          try {
+            await transferSellerPayout(s.id);
+          } catch (payoutErr) {
+            console.warn("In Hand: Connect transfer after auto-release", s.id, payoutErr);
           }
         }
       }
@@ -6114,31 +6140,31 @@ function AppShell({ onSignOut, authUser }) {
           {vaultFiltered.length === 0 && myCards.length > 0 ? (
             <div style={{ textAlign:"center",padding:"32px 16px",color:"#aaa",fontSize:13 }}>No figures in this filter.</div>
           ) : vaultFiltered.map(fig=>{ const {from}=lc(fig.line); return (
-            <div key={fig.id} style={{ background:"#fff",borderRadius:18,padding:"14px 16px",boxShadow:"0 2px 10px rgba(0,0,0,0.05)",border:"1px solid #E4EBF2",marginBottom:10,display:"flex",gap:14,alignItems:"center" }}>
+            <div key={fig.id} className="inhand-vault-card">
               <div style={{ position:"relative", flexShrink:0 }}>
-                <FigureImage card={fig} size={56} borderRadius={14} onClick={fig.photos?.length>0?()=>setPhotoViewer({photos:fig.photos,startIdx:0}):undefined} onVideoOpen={() => { const e = getListingVideoEmbed(fig.videoUrl); if (e) setListingVideoModal(e); }} />
-                {fig.wantsTrade&&<div style={{ position:"absolute",top:-4,right:-4,width:12,height:12,background:"#00b894",borderRadius:"50%",border:"2px solid #fff" }} />}
+                <FigureImage card={fig} size={96} borderRadius={18} onClick={fig.photos?.length>0?()=>setPhotoViewer({photos:fig.photos,startIdx:0}):undefined} onVideoOpen={() => { const e = getListingVideoEmbed(fig.videoUrl); if (e) setListingVideoModal(e); }} />
+                {fig.wantsTrade&&<div style={{ position:"absolute",top:-4,right:-4,width:14,height:14,background:"#00b894",borderRadius:"50%",border:"2px solid #fff" }} />}
               </div>
               <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontWeight:800,fontSize:14,color:"#2C3E50",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{fig.name}</div>
-                <div style={{ fontSize:11,color:"#bbb",marginTop:1 }}>{fig.line}</div>
-                {fig.description && <div style={{ fontSize:11,color:"#888",marginTop:3,lineHeight:1.4 }}>{fig.description}</div>}
-                <div style={{ display:"flex",gap:6,marginTop:5 }}><span style={{ fontSize:10,fontWeight:800,background:condBg(fig.isNew),color:condColor(fig.isNew),borderRadius:6,padding:"2px 8px" }}>{condLabel(fig.isNew)}</span><span style={{ fontWeight:800,fontSize:13,color:from }}>${fig.value}</span></div>
+                <div style={{ fontWeight:800,fontSize:16,color:"#2C3E50",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{fig.name}</div>
+                <div style={{ fontSize:12,color:"#bbb",marginTop:2 }}>{fig.line}</div>
+                {fig.description && <div style={{ fontSize:12,color:"#888",marginTop:4,lineHeight:1.4 }}>{fig.description}</div>}
+                <div style={{ display:"flex",gap:8,marginTop:8,alignItems:"center",flexWrap:"wrap" }}><span style={{ fontSize:11,fontWeight:800,background:condBg(fig.isNew),color:condColor(fig.isNew),borderRadius:6,padding:"3px 9px" }}>{condLabel(fig.isNew)}</span><span style={{ fontWeight:800,fontSize:16,color:from }}>${fig.value}</span></div>
               </div>
-              <div style={{ display:"flex", flexDirection:"column", alignItems:"stretch", gap:6, minWidth:72 }}>
+              <div style={{ display:"flex", flexDirection:"column", alignItems:"stretch", gap:7, minWidth:84 }}>
                 <button
                   type="button"
                   onClick={() => setEditingCard(fig)}
-                  style={{ background:"#2C3E50", border:"none", borderRadius:8, padding:"6px 8px", fontSize:10, fontWeight:800, color:"#fff", cursor:"pointer", whiteSpace:"nowrap", display:"flex", alignItems:"center", justifyContent:"center", gap:4 }}
+                  style={{ background:"#2C3E50", border:"none", borderRadius:10, padding:"8px 10px", fontSize:11, fontWeight:800, color:"#fff", cursor:"pointer", whiteSpace:"nowrap", display:"flex", alignItems:"center", justifyContent:"center", gap:4 }}
                 >
                   <span aria-hidden="true">✏️</span> Edit
                 </button>
-                <button type="button" onClick={()=>handleToggleListing(fig.id,"wantsTrade")} style={{ background:fig.wantsTrade?"#e8fff6":"#EEF2F7", border:"none", borderRadius:8, padding:"5px 6px", fontSize:9, fontWeight:700, color:fig.wantsTrade?"#00b894":"#888", cursor:"pointer" }}>{fig.wantsTrade?"⇄ Trade on":"⇄ Trade off"}</button>
-                <button type="button" onClick={()=>handleToggleListing(fig.id,"wantsBuy")} style={{ background:fig.wantsBuy?"#fff8e6":"#EEF2F7", border:"none", borderRadius:8, padding:"5px 6px", fontSize:9, fontWeight:700, color:fig.wantsBuy?"#f0932b":"#888", cursor:"pointer" }}>{fig.wantsBuy?"💰 Sale on":"💰 Sale off"}</button>
-                <button type="button" onClick={()=>setEditingPhotos(fig.id)} style={{ background:"#EAF1FA", border:"none", borderRadius:8, padding:"4px 8px", fontSize:9, fontWeight:700, color:"#3A7BD5", cursor:"pointer", whiteSpace:"nowrap" }}>
+                <button type="button" onClick={()=>handleToggleListing(fig.id,"wantsTrade")} style={{ background:fig.wantsTrade?"#e8fff6":"#EEF2F7", border:"none", borderRadius:10, padding:"7px 8px", fontSize:10, fontWeight:700, color:fig.wantsTrade?"#00b894":"#888", cursor:"pointer" }}>{fig.wantsTrade?"⇄ Trade on":"⇄ Trade off"}</button>
+                <button type="button" onClick={()=>handleToggleListing(fig.id,"wantsBuy")} style={{ background:fig.wantsBuy?"#fff8e6":"#EEF2F7", border:"none", borderRadius:10, padding:"7px 8px", fontSize:10, fontWeight:700, color:fig.wantsBuy?"#f0932b":"#888", cursor:"pointer" }}>{fig.wantsBuy?"💰 Sale on":"💰 Sale off"}</button>
+                <button type="button" onClick={()=>setEditingPhotos(fig.id)} style={{ background:"#EAF1FA", border:"none", borderRadius:10, padding:"6px 8px", fontSize:10, fontWeight:700, color:"#3A7BD5", cursor:"pointer", whiteSpace:"nowrap" }}>
                   📷 {fig.photos?.length||0}
                 </button>
-                <button onClick={()=>setShareCard(fig)} style={{ background:"#EEF2F7", border:"none", borderRadius:8, padding:"4px 8px", fontSize:9, fontWeight:700, color:"#555", cursor:"pointer" }}>
+                <button onClick={()=>setShareCard(fig)} style={{ background:"#EEF2F7", border:"none", borderRadius:10, padding:"6px 8px", fontSize:10, fontWeight:700, color:"#555", cursor:"pointer" }}>
                   ↗️
                 </button>
               </div>
@@ -6496,6 +6522,36 @@ function AppShell({ onSignOut, authUser }) {
             </div>
           </div>
 
+          {/* Seller payouts — primary CTA */}
+          <div className="inhand-payouts-cta">
+            <div style={{ fontSize:11, fontWeight:700, letterSpacing:1, opacity:0.85, marginBottom:6 }}>SELLER PAYOUTS</div>
+            <div style={{ fontWeight:800, fontSize:18, marginBottom:6 }}>
+              {myUser?.stripeAccountId ? "Manage payouts" : "Set up payouts"}
+            </div>
+            <div style={{ fontSize:12, lineHeight:1.5, opacity:0.92, marginBottom:14 }}>
+              {myUser?.stripeAccountId
+                ? "Bank onboarding started. Tap to continue setup or open your Stripe Express dashboard. After escrow releases, Stripe pays out to your bank in about 2 business days."
+                : "Add your bank via Stripe Connect Express. Once verified, you automatically receive payouts about 2 business days after escrow releases."}
+            </div>
+            <button
+              type="button"
+              onClick={() => handleConnectPayouts()}
+              style={{
+                width: "100%",
+                background: "#fff",
+                border: "none",
+                borderRadius: 14,
+                padding: "14px 16px",
+                color: "#0d5c4a",
+                fontWeight: 800,
+                fontSize: 15,
+                cursor: "pointer",
+              }}
+            >
+              {myUser?.stripeAccountId ? "Open payouts →" : "Set up payouts"}
+            </button>
+          </div>
+
           {/* Quick links */}
           <div style={{ display:"flex",flexDirection:"column",gap:10,marginBottom:20 }}>
             {[
@@ -6526,7 +6582,7 @@ function AppShell({ onSignOut, authUser }) {
               { icon:"✏️", label:"Edit Profile",        sub:`${myUser?.username} · ${myUser?.location||"Location not set"}`, action:()=>openEditProfile("profile") },
               { icon:"🎭", label:"Change Avatar",       sub:`Current: ${myUser?.avatar}`, action:()=>openEditProfile("avatar") },
               { icon:"⭐", label:"Wishlist Tags",       sub:myUser?.wishlist?.length ? myUser.wishlist.map(t=>`#${t}`).join(" ") : "None set — tap to add", action:()=>openEditProfile("wishlist") },
-              { icon:"🏦", label:"Seller payouts (Stripe Connect)", sub: myUser?.stripeAccountId ? "Bank onboarding started — tap to continue / manage" : "Set up your bank account for sale payouts", action:()=>handleConnectPayouts() },
+              { icon:"🏦", label:"Set up payouts", sub: myUser?.stripeAccountId ? "Stripe Connect — continue / manage bank" : "Stripe Connect Express — bank for sale payouts", action:()=>handleConnectPayouts() },
               { icon:"📍", label:"Shipping Addresses",  sub: myUser?.addresses?.length ? myUser.addresses.map(a=>`${a.label}: ${a.street}`).join(" · ") : "No addresses saved", action:()=>setShowAddressModal(true) },
               { icon:"🔔", label:"Notifications",       sub:"Trade alerts, delivery updates", action:()=>setShowNotifications(true) },
               { icon:"🔒", label:"Privacy & Security",  sub:"Export data, deactivate, delete account", action:()=>openEditProfile("danger") },

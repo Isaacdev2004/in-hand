@@ -4,7 +4,11 @@ import { StatusBar, Style } from "@capacitor/status-bar";
 import { SplashScreen } from "@capacitor/splash-screen";
 import { Keyboard } from "@capacitor/keyboard";
 import { supabase } from "../lib/supabaseClient";
-import { handleSupabaseAuthDeepLink, isAuthCallbackUrl } from "../lib/authRedirect";
+import {
+  handleSupabaseAuthDeepLink,
+  isAuthCallbackUrl,
+  isPasswordRecoveryUrl,
+} from "../lib/authRedirect";
 import { isListingUrl, parseListingIdFromUrl } from "../lib/shareLinks";
 
 /** Deep-link handler: auth callback, listing share, or ?tab=browse|vault|wallet */
@@ -12,9 +16,12 @@ async function handleIncomingUrl(url) {
   if (!url || typeof window === "undefined") return;
 
   if (isAuthCallbackUrl(url) && supabase) {
+    const recovery = isPasswordRecoveryUrl(url);
     const ok = await handleSupabaseAuthDeepLink(url, supabase);
     if (ok) {
-      window.dispatchEvent(new CustomEvent("inhand:auth-complete"));
+      window.dispatchEvent(
+        new CustomEvent("inhand:auth-complete", { detail: { recovery } })
+      );
       return;
     }
   }
@@ -90,16 +97,50 @@ export async function initCapacitor() {
   }, 400);
 
   try {
-    Keyboard.addListener("keyboardWillShow", () => {
+    Keyboard.addListener("keyboardWillShow", (info) => {
+      const h = Math.max(0, Number(info?.keyboardHeight) || 0);
+      document.documentElement.classList.add("keyboard-open");
       document.body.classList.add("keyboard-open");
-      window.dispatchEvent(new CustomEvent("inhand:keyboard-show"));
+      document.documentElement.style.setProperty("--ih-keyboard-height", `${h}px`);
+      window.dispatchEvent(new CustomEvent("inhand:keyboard-show", { detail: { height: h } }));
+      // Keep focused field above the keyboard
+      requestAnimationFrame(() => {
+        const el = document.activeElement;
+        if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) {
+          try {
+            el.scrollIntoView({ block: "center", behavior: "smooth" });
+          } catch {
+            /* ignore */
+          }
+        }
+      });
     });
     Keyboard.addListener("keyboardWillHide", () => {
+      document.documentElement.classList.remove("keyboard-open");
       document.body.classList.remove("keyboard-open");
+      document.documentElement.style.setProperty("--ih-keyboard-height", "0px");
     });
   } catch (e) {
     console.warn("In Hand: Keyboard listeners skipped", e);
   }
+
+  // WebView / forms: scroll focused inputs into view whenever keyboard is up
+  document.addEventListener(
+    "focusin",
+    (e) => {
+      const t = e.target;
+      if (!t || !(t instanceof HTMLElement)) return;
+      if (t.tagName !== "INPUT" && t.tagName !== "TEXTAREA" && !t.isContentEditable) return;
+      setTimeout(() => {
+        try {
+          t.scrollIntoView({ block: "center", behavior: "smooth" });
+        } catch {
+          /* ignore */
+        }
+      }, 120);
+    },
+    true
+  );
 
   try {
     const launch = await App.getLaunchUrl();

@@ -21,6 +21,12 @@ export function isAuthCallbackUrl(url) {
   );
 }
 
+/** True when URL is a password-recovery callback (hash or query). */
+export function isPasswordRecoveryUrl(url) {
+  if (!url) return false;
+  return /[?&#]type=recovery\b/i.test(url) || /type%3Drecovery/i.test(url);
+}
+
 /**
  * Complete Supabase auth from email deep link (native app or web).
  * Returns true when tokens/code were applied.
@@ -53,6 +59,26 @@ export async function handleSupabaseAuthDeepLink(url, supabaseClient) {
         });
         if (error) {
           console.warn("In Hand: setSession failed", error);
+          return false;
+        }
+        return true;
+      }
+    }
+
+    // Some clients put tokens in the query string
+    const qIdx = url.indexOf("?");
+    if (qIdx >= 0) {
+      const q = url.slice(qIdx + 1).split("#")[0];
+      const params = new URLSearchParams(q);
+      const access_token = params.get("access_token");
+      const refresh_token = params.get("refresh_token");
+      if (access_token && refresh_token) {
+        const { error } = await supabaseClient.auth.setSession({
+          access_token,
+          refresh_token,
+        });
+        if (error) {
+          console.warn("In Hand: setSession (query) failed", error);
           return false;
         }
         return true;

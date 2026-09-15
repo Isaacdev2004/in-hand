@@ -66,6 +66,14 @@ Deno.serve(async (req) => {
         business_profile: {
           product_description: "In Hand collector marketplace payouts",
         },
+        settings: {
+          payouts: {
+            schedule: {
+              interval: "daily",
+              delay_days: 2,
+            },
+          },
+        },
         metadata: { inhand_user_id: user.id },
       });
       accountId = account.id;
