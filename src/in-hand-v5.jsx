@@ -1522,32 +1522,65 @@ function LabelModal({ shipment, rate, seller, buyer, sellerAddresses, onGenerate
     state:  defaultAddr?.state  || seller?.location?.split(",")[1]?.trim() || "",
     zip:    defaultAddr?.zip    || "",
   });
-  const [toAddr] = useState({ name: buyer?.username || "", city: buyer?.location || "On file" });
+  const savedBuyerAddr = shipment?.shipTo || buyer?.addresses?.find((a) => a.isDefault) || buyer?.addresses?.[0] || null;
+  const [toAddrForm, setToAddrForm] = useState({
+    name:   savedBuyerAddr?.name   || buyer?.username || "",
+    street: savedBuyerAddr?.street || "",
+    city:   savedBuyerAddr?.city   || "",
+    state:  savedBuyerAddr?.state  || "",
+    zip:    savedBuyerAddr?.zip    || "",
+  });
   const [generatedTN, setGeneratedTN] = useState("");
   const [labelUrl, setLabelUrl] = useState("");
   const [generateError, setGenerateError] = useState("");
-  const buyerShipAddr = shipment?.shipTo || buyer?.addresses?.find((a) => a.isDefault) || buyer?.addresses?.[0];
   const buyerAddressReady = !!(
-    buyerShipAddr?.street && buyerShipAddr?.city && buyerShipAddr?.state && buyerShipAddr?.zip
+    toAddrForm.street?.trim() && toAddrForm.city?.trim() && toAddrForm.state?.trim() && toAddrForm.zip?.trim()
   );
   const shipToLine = buyerAddressReady
-    ? `${buyerShipAddr.street}, ${buyerShipAddr.city}, ${buyerShipAddr.state} ${buyerShipAddr.zip}`
+    ? `${toAddrForm.street}, ${toAddrForm.city}, ${toAddrForm.state} ${toAddrForm.zip}`
     : "";
   const setF = (k, v) => setFromAddr(a => ({...a, [k]: v}));
+  const setTo = (k, v) => setToAddrForm((a) => ({ ...a, [k]: v }));
 
   const pickSavedAddr = (addr) => {
     setSelectedAddrId(addr.id);
     setFromAddr({ name:addr.name, street:addr.street, city:addr.city, state:addr.state, zip:addr.zip });
   };
 
+  const fromReady = !!(fromAddr.name?.trim() && fromAddr.street?.trim() && fromAddr.city?.trim() && fromAddr.state?.trim() && fromAddr.zip?.trim());
+
+  const goConfirm = () => {
+    setGenerateError("");
+    if (!fromReady) {
+      setGenerateError("Enter your full return address (name, street, city, state, ZIP).");
+      return;
+    }
+    if (!buyerAddressReady) {
+      setGenerateError("Enter the recipient’s full US shipping address before continuing.");
+      return;
+    }
+    setStep("confirm");
+  };
+
   const handleGenerate = async () => {
     setGenerateError("");
+    if (!fromReady) {
+      setGenerateError("Complete your return address first.");
+      setStep("details");
+      return;
+    }
+    if (!buyerAddressReady) {
+      setGenerateError("Recipient address is required to buy a USPS label.");
+      setStep("details");
+      return;
+    }
     setStep("generating");
     try {
       if (supabase) {
         const result = await createShippingLabel({
           shipmentId: shipment.id,
           fromAddress: fromAddr,
+          toAddress: toAddrForm,
         });
         setGeneratedTN(result.trackingNumber || "");
         setLabelUrl(result.labelUrl || "");
@@ -1606,10 +1639,9 @@ function LabelModal({ shipment, rate, seller, buyer, sellerAddresses, onGenerate
         </div>
       </div>
     )}
-    <div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:600,display:"flex",alignItems:"flex-end",justifyContent:"center" }}>
+    <div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:800,display:"flex",alignItems:"flex-end",justifyContent:"center" }}>
       <div style={{ background:"#fff",borderRadius:"28px 28px 0 0",padding:"24px 20px 40px",width:"100%",maxWidth:430,maxHeight:"90vh",overflowY:"auto" }}>
 
-        {/* Header */}
         <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20 }}>
           <div>
             <div style={{ fontWeight:800,fontSize:18,color:"#2C3E50" }}>
@@ -1620,10 +1652,8 @@ function LabelModal({ shipment, rate, seller, buyer, sellerAddresses, onGenerate
           <button onClick={onClose} style={{ background:"#E4EBF2",border:"none",borderRadius:"50%",width:32,height:32,fontSize:16,cursor:"pointer" }}>✕</button>
         </div>
 
-        {/* STEP: DETAILS */}
         {step==="details" && (
           <>
-            {/* Shipment summary */}
             <div style={{ background:"#f9f9f9",borderRadius:16,padding:"14px",marginBottom:16 }}>
               <div style={{ fontWeight:700,fontSize:12,color:"#aaa",marginBottom:10,letterSpacing:0.8 }}>SHIPMENT SUMMARY</div>
               <div style={{ display:"flex",justifyContent:"space-between",marginBottom:6 }}>
@@ -1644,24 +1674,27 @@ function LabelModal({ shipment, rate, seller, buyer, sellerAddresses, onGenerate
               </div>
             </div>
 
-            {/* Destination (read only) */}
-            <div style={{ background:"#f0fff8",border:"1.5px solid #00b89433",borderRadius:14,padding:"12px 14px",marginBottom:16 }}>
-              <div style={{ fontWeight:700,fontSize:11,color:"#00b894",marginBottom:8,letterSpacing:0.8 }}>SHIPPING TO</div>
-              <div style={{ fontWeight:800,fontSize:13,color:"#2C3E50" }}>{buyerShipAddr?.name || toAddr.name}</div>
-              <div style={{ fontSize:11,color:"#aaa",marginTop:2 }}>
-                {buyerAddressReady ? shipToLine : `Address missing · ${toAddr.city}`}
+            <div style={{ background:buyerAddressReady?"#f0fff8":"#fff8e6",border:`1.5px solid ${buyerAddressReady?"#00b89433":"#f9ca24"}`,borderRadius:14,padding:"12px 14px",marginBottom:16 }}>
+              <div style={{ fontWeight:700,fontSize:11,color:buyerAddressReady?"#00b894":"#f0932b",marginBottom:8,letterSpacing:0.8 }}>SHIPPING TO</div>
+              <div style={{ display:"flex",flexDirection:"column",gap:8 }}>
+                <input value={toAddrForm.name} onChange={e=>setTo("name",e.target.value)} placeholder="Recipient name *" style={IS} />
+                <input value={toAddrForm.street} onChange={e=>setTo("street",e.target.value)} placeholder="Street address *" style={IS} />
+                <div style={{ display:"grid",gridTemplateColumns:"2fr 1fr 1fr",gap:8 }}>
+                  <input value={toAddrForm.city} onChange={e=>setTo("city",e.target.value)} placeholder="City *" style={IS} />
+                  <input value={toAddrForm.state} onChange={e=>setTo("state",e.target.value.toUpperCase())} placeholder="ST *" maxLength={2} style={IS} />
+                  <input value={toAddrForm.zip} onChange={e=>setTo("zip",e.target.value)} placeholder="ZIP *" maxLength={10} style={IS} />
+                </div>
               </div>
-              {!buyerAddressReady && supabase && (
-                <div style={{ fontSize:10,color:"#ff6b6b",marginTop:6,fontWeight:600 }}>
-                  No ship-to on this order. The buyer must complete checkout with a US shipping address.
+              {!buyerAddressReady && (
+                <div style={{ fontSize:10,color:"#f0932b",marginTop:8,fontWeight:600 }}>
+                  Recipient address is required. Ask them for it, or have them save one under Account → Shipping Addresses.
                 </div>
               )}
             </div>
 
-            {/* Saved address picker */}
             {sellerAddresses?.length > 0 && (
               <div style={{ marginBottom:14 }}>
-                <div style={{ fontSize:11,fontWeight:700,color:"#aaa",marginBottom:8,letterSpacing:0.8 }}>USE SAVED ADDRESS</div>
+                <div style={{ fontSize:11,fontWeight:700,color:"#aaa",marginBottom:8,letterSpacing:0.8 }}>USE SAVED RETURN ADDRESS</div>
                 <div style={{ display:"flex",gap:8 }}>
                   {sellerAddresses.map(addr => (
                     <div key={addr.id} onClick={()=>pickSavedAddr(addr)} style={{ flex:1,background:selectedAddrId===addr.id?"#2C3E50":"#EEF2F7",borderRadius:14,padding:"10px 12px",cursor:"pointer",border:`2px solid ${selectedAddrId===addr.id?"#2C3E50":"transparent"}`,transition:"all 0.15s" }}>
@@ -1675,42 +1708,42 @@ function LabelModal({ shipment, rate, seller, buyer, sellerAddresses, onGenerate
               </div>
             )}
 
-            {/* Return address form */}
-            <div style={{ fontWeight:700,fontSize:11,color:"#aaa",marginBottom:8,letterSpacing:0.8 }}>{sellerAddresses?.length>0?"OR ENTER MANUALLY":"YOUR RETURN ADDRESS"}</div>
+            <div style={{ fontWeight:700,fontSize:11,color:"#aaa",marginBottom:8,letterSpacing:0.8 }}>{sellerAddresses?.length>0?"OR ENTER RETURN ADDRESS":"YOUR RETURN ADDRESS"}</div>
             <div style={{ display:"flex",flexDirection:"column",gap:8,marginBottom:20 }}>
               <input value={fromAddr.name} onChange={e=>setF("name",e.target.value)} placeholder="Full name *" style={IS} />
               <input value={fromAddr.street} onChange={e=>setF("street",e.target.value)} placeholder="Street address *" style={IS} />
               <div style={{ display:"grid",gridTemplateColumns:"2fr 1fr 1fr",gap:8 }}>
                 <input value={fromAddr.city} onChange={e=>setF("city",e.target.value)} placeholder="City *" style={IS} />
-                <input value={fromAddr.state} onChange={e=>setF("state",e.target.value)} placeholder="State *" maxLength={2} style={IS} />
+                <input value={fromAddr.state} onChange={e=>setF("state",e.target.value.toUpperCase())} placeholder="State *" maxLength={2} style={IS} />
                 <input value={fromAddr.zip} onChange={e=>setF("zip",e.target.value)} placeholder="ZIP *" maxLength={5} style={IS} />
               </div>
             </div>
 
-            {/* Shippo notice */}
-            <div style={{ background:"#EAF1FA",borderRadius:14,padding:"12px 14px",marginBottom:20,display:"flex",gap:10 }}>
+            <div style={{ background:"#EAF1FA",borderRadius:14,padding:"12px 14px",marginBottom:16,display:"flex",gap:10 }}>
               <span style={{ fontSize:20 }}>⚡</span>
               <div>
                 <div style={{ fontWeight:700,fontSize:12,color:"#3A7BD5" }}>Shippo labels</div>
-                <div style={{ fontSize:11,color:"#888",marginTop:2 }}>Buyer already paid USPS shipping at checkout. In Hand purchases the label through Shippo (goshippo.com); cost is covered from escrow.</div>
+                <div style={{ fontSize:11,color:"#888",marginTop:2 }}>In Hand purchases the USPS label through Shippo. Enter both addresses fully or the button will explain what’s missing.</div>
               </div>
             </div>
 
-            <Btn
-              onClick={() => { if(fromAddr.name && fromAddr.street && fromAddr.zip) setStep("confirm"); }}
-              style={{ background:"#2C3E50",color:"#fff",width:"100%" }}
-            >Review & Generate Label →</Btn>
+            {generateError && (
+              <div style={{ background:"#fff0f0",borderRadius:12,padding:"12px 14px",marginBottom:12,fontSize:12,color:"#ff6b6b",fontWeight:600 }}>
+                {generateError}
+              </div>
+            )}
+
+            <Btn onClick={goConfirm} style={{ background:"#2C3E50",color:"#fff",width:"100%" }}>Review & Generate Label →</Btn>
           </>
         )}
 
-        {/* STEP: CONFIRM */}
         {step==="confirm" && (
           <>
             <div style={{ background:"#f9f9f9",borderRadius:16,padding:"16px",marginBottom:16 }}>
               <div style={{ fontWeight:700,fontSize:12,color:"#aaa",marginBottom:12,letterSpacing:0.8 }}>CONFIRM DETAILS</div>
               {[
                 ["From", `${fromAddr.name}, ${fromAddr.street}, ${fromAddr.city} ${fromAddr.state} ${fromAddr.zip}`],
-                ["To",   buyerAddressReady ? `${buyerShipAddr.name || toAddr.name}, ${shipToLine}` : `${toAddr.name} (no address yet)`],
+                ["To",   `${toAddrForm.name || buyer?.username || "Recipient"}, ${shipToLine}`],
                 ["Service", "USPS Ground Advantage"],
                 ["Package", rate?.label],
                 ["Label cost", `$${Number(rate?.price || 0).toFixed(2)} (from escrow)`],
@@ -1729,8 +1762,7 @@ function LabelModal({ shipment, rate, seller, buyer, sellerAddresses, onGenerate
             <div style={{ background:"#fff8e6",borderRadius:12,padding:"12px 14px",marginBottom:12,fontSize:12,color:"#f0932b",fontWeight:600 }}>
               ⚠️ Once generated, the label cost is non-refundable. Make sure the item is packaged and ready to ship.
             </div>
-            {/* Packaging guide link */}
-            <div onClick={()=>setShowPackagingGuide&&setShowPackagingGuide(true)} style={{ background:"#EAF1FA",borderRadius:12,padding:"10px 14px",marginBottom:16,display:"flex",alignItems:"center",gap:8,cursor:"pointer" }}>
+            <div onClick={()=>setShowPackagingGuide(true)} style={{ background:"#EAF1FA",borderRadius:12,padding:"10px 14px",marginBottom:16,display:"flex",alignItems:"center",gap:8,cursor:"pointer" }}>
               <span style={{ fontSize:18 }}>📦</span>
               <div style={{ flex:1 }}>
                 <div style={{ fontWeight:700,fontSize:12,color:"#3A7BD5" }}>Packaging Guidelines</div>
@@ -1740,16 +1772,11 @@ function LabelModal({ shipment, rate, seller, buyer, sellerAddresses, onGenerate
             </div>
             <div style={{ display:"flex",gap:8 }}>
               <button onClick={()=>setStep("details")} style={{ flex:1,background:"#EEF2F7",border:"none",borderRadius:12,padding:"12px",fontWeight:700,fontSize:13,color:"#555",cursor:"pointer" }}>← Back</button>
-              <Btn
-                onClick={handleGenerate}
-                style={{ flex:2,background:"linear-gradient(135deg,#2C3E50,#2d3561)",color:"#fff",opacity:supabase && !buyerAddressReady ? 0.5 : 1 }}
-                disabled={supabase && !buyerAddressReady}
-              >Generate Label ✓</Btn>
+              <Btn onClick={handleGenerate} style={{ flex:2,background:"linear-gradient(135deg,#2C3E50,#2d3561)",color:"#fff" }}>Generate Label ✓</Btn>
             </div>
           </>
         )}
 
-        {/* STEP: GENERATING */}
         {step==="generating" && (
           <div style={{ textAlign:"center",padding:"40px 0" }}>
             <div style={{ fontSize:52,marginBottom:16 }}>📡</div>
@@ -1762,7 +1789,6 @@ function LabelModal({ shipment, rate, seller, buyer, sellerAddresses, onGenerate
           </div>
         )}
 
-        {/* STEP: DONE */}
         {step==="done" && (
           <>
             <div style={{ textAlign:"center",marginBottom:20 }}>
@@ -1771,7 +1797,6 @@ function LabelModal({ shipment, rate, seller, buyer, sellerAddresses, onGenerate
               <div style={{ fontSize:12,color:"#aaa" }}>Your prepaid USPS label is ready</div>
             </div>
 
-            {/* Fake label preview */}
             <div style={{ background:"#fff",border:"2px dashed #2C3E50",borderRadius:16,padding:"16px",marginBottom:16,fontFamily:"monospace" }}>
               <div style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12 }}>
                 <div>
@@ -1787,30 +1812,30 @@ function LabelModal({ shipment, rate, seller, buyer, sellerAddresses, onGenerate
                 </div>
                 <div>
                   <div style={{ fontSize:9,color:"#aaa",fontWeight:700,letterSpacing:1 }}>TO</div>
-                  <div style={{ fontSize:11,color:"#2C3E50",marginTop:3,lineHeight:1.4 }}>{buyerShipAddr?.name || toAddr.name}<br/>{buyerAddressReady ? <>{buyerShipAddr.street}<br/>{buyerShipAddr.city}, {buyerShipAddr.state} {buyerShipAddr.zip}</> : "Address on file"}</div>
+                  <div style={{ fontSize:11,color:"#2C3E50",marginTop:3,lineHeight:1.4 }}>{toAddrForm.name || buyer?.username}<br/>{toAddrForm.street}<br/>{toAddrForm.city}, {toAddrForm.state} {toAddrForm.zip}</div>
                 </div>
               </div>
-              {/* Barcode simulation */}
-              <div style={{ background:"#2C3E50",borderRadius:6,padding:"8px 10px",marginBottom:8,display:"flex",flexDirection:"column",gap:3,alignItems:"center" }}>
-                <div style={{ display:"flex",gap:1 }}>
-                  {Array.from({length:60}).map((_,i)=><div key={i} style={{ width:Math.random()>0.5?2:1,height:24,background:"#fff",opacity:Math.random()>0.2?1:0.3 }} />)}
-                </div>
-                <div style={{ fontSize:9,color:"rgba(255,255,255,0.7)",letterSpacing:2,marginTop:4 }}>{generatedTN}</div>
+              <div style={{ background:"#2C3E50",borderRadius:8,padding:"10px",textAlign:"center" }}>
+                <div style={{ fontSize:9,color:"rgba(255,255,255,0.5)",letterSpacing:1 }}>TRACKING</div>
+                <div style={{ fontSize:13,color:"#fff",fontWeight:700,marginTop:4,letterSpacing:1 }}>{generatedTN}</div>
               </div>
-              <div style={{ fontSize:9,color:"#aaa",textAlign:"center" }}>Label cost ${Number(rate?.price || 0).toFixed(2)} deducted from escrow</div>
             </div>
 
-            {/* Actions */}
-            <div style={{ display:"flex",flexDirection:"column",gap:10,marginBottom:16 }}>
-              <button onClick={()=>{ window.open(labelUrl || `https://tools.usps.com/go/TrackConfirmAction?tLabels=${generatedTN}`,"_blank"); }} style={{ background:"#2C3E50",border:"none",borderRadius:14,padding:"13px",fontWeight:800,fontSize:14,color:"#fff",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8 }}>
-                🖨️ {labelUrl ? "Open Label PDF" : "Track on USPS"}
+            {labelUrl ? (
+              <a href={labelUrl} target="_blank" rel="noreferrer" style={{ display:"block", background:"#2C3E50", color:"#fff", textAlign:"center", borderRadius:12, padding:"12px", fontWeight:800, fontSize:14, textDecoration:"none", marginBottom:10 }}>
+                Open / Print Label PDF
+              </a>
+            ) : null}
+
+            <div style={{ display:"flex",gap:8,marginBottom:16 }}>
+              <button onClick={()=>{ navigator.clipboard?.writeText(generatedTN); }} style={{ flex:1,background:"#EEF2F7",border:"none",borderRadius:12,padding:"12px",fontWeight:700,fontSize:13,color:"#555",cursor:"pointer" }}>
+                Copy Tracking
               </button>
-              <button onClick={()=>{ navigator.clipboard?.writeText(generatedTN); }} style={{ background:"#EAF1FA",border:"none",borderRadius:14,padding:"12px",fontWeight:700,fontSize:13,color:"#3A7BD5",cursor:"pointer" }}>
-                📋 Copy Tracking Number
-              </button>
+              <a href={uspsRedUrl} target="_blank" rel="noreferrer" style={{ flex:1,background:"#EAF1FA",borderRadius:12,padding:"12px",fontWeight:700,fontSize:13,color:"#3A7BD5",textAlign:"center",textDecoration:"none" }}>
+                Track on USPS
+              </a>
             </div>
 
-            {/* Drop-off instructions */}
             <div style={{ background:"#f0fff8",border:"1.5px solid #00b89433",borderRadius:14,padding:"14px",marginBottom:20 }}>
               <div style={{ fontWeight:700,fontSize:12,color:"#00b894",marginBottom:8 }}>📦 Next Steps</div>
               {[
@@ -1818,10 +1843,10 @@ function LabelModal({ shipment, rate, seller, buyer, sellerAddresses, onGenerate
                 "Attach the printed label to the outside of the box",
                 "Drop off at any USPS location or schedule a free pickup at usps.com",
                 "Tracking updates automatically — buyer gets notified",
-              ].map((step,i) => (
+              ].map((stepItem,i) => (
                 <div key={i} style={{ display:"flex",gap:8,marginBottom:6,alignItems:"flex-start" }}>
                   <div style={{ width:18,height:18,borderRadius:"50%",background:"#00b894",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,color:"#fff",fontWeight:800,flexShrink:0,marginTop:1 }}>{i+1}</div>
-                  <div style={{ fontSize:12,color:"#555" }}>{step}</div>
+                  <div style={{ fontSize:12,color:"#555" }}>{stepItem}</div>
                 </div>
               ))}
             </div>
@@ -1836,6 +1861,7 @@ function LabelModal({ shipment, rate, seller, buyer, sellerAddresses, onGenerate
     </>
   );
 }
+
 function AddressModal({ addresses, onSave, onClose }) {
   const [list, setList] = useState(addresses || []);
   const [editing, setEditing] = useState(null); // null | "new" | address id
@@ -4367,6 +4393,19 @@ function AppShell({ onSignOut, authUser }) {
     const tradeTxn = txns.find((t) => t.type === "trade") || txns[txns.length - 1];
     const offerNames = offeredCards.map((c) => c.name).join(" + ");
     const offerValue = offeredCards.reduce((s, c) => s + (c.value || 0), 0);
+    const pickShipAddr = (uid) => {
+      const u = db.users.find((x) => x.id === uid);
+      const a = u?.addresses?.find((x) => x.isDefault) || u?.addresses?.[0];
+      if (!a?.street || !a?.city || !a?.state || !a?.zip) return null;
+      return {
+        name: a.name || u?.username || "",
+        street: a.street,
+        city: a.city,
+        state: a.state,
+        zip: a.zip,
+        country: "US",
+      };
+    };
     const shipA = {
       id: `sh_trade_${proposal.id}_a`,
       txnId: tradeTxn.id,
@@ -4385,6 +4424,7 @@ function AppShell({ onSignOut, authUser }) {
       deliveredAt: null,
       disputeFrozen: false,
       events: [],
+      shipTo: pickShipAddr(proposal.receiverId),
     };
     const shipB = {
       id: `sh_trade_${proposal.id}_b`,
@@ -4404,6 +4444,7 @@ function AppShell({ onSignOut, authUser }) {
       deliveredAt: null,
       disputeFrozen: false,
       events: [],
+      shipTo: pickShipAddr(proposal.proposerId),
     };
     const tradeShips = [shipA, shipB];
     if (supabase) {

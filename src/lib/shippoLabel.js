@@ -3,7 +3,7 @@ import { supabase } from "./supabaseClient";
 /**
  * Purchase a USPS label via Supabase Edge Function (Shippo token stays server-side).
  */
-export async function createShippingLabel({ shipmentId, fromAddress }) {
+export async function createShippingLabel({ shipmentId, fromAddress, toAddress }) {
   if (!supabase) {
     throw new Error("Supabase is not configured.");
   }
@@ -28,7 +28,7 @@ export async function createShippingLabel({ shipmentId, fromAddress }) {
       Authorization: `Bearer ${accessToken}`,
       apikey: anon,
     },
-    body: JSON.stringify({ shipmentId, fromAddress }),
+    body: JSON.stringify({ shipmentId, fromAddress, toAddress }),
   });
 
   const body = await res.json().catch(() => ({}));

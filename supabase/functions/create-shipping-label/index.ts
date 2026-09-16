@@ -48,7 +48,7 @@ Deno.serve(async (req) => {
       return json({ error: "Invalid or expired session" }, 401);
     }
 
-    const { shipmentId, fromAddress } = await req.json();
+    const { shipmentId, fromAddress, toAddress } = await req.json();
     if (!shipmentId || !fromAddress?.street || !fromAddress?.city || !fromAddress?.state || !fromAddress?.zip) {
       return json({ error: "shipmentId and complete fromAddress required" }, 400);
     }
@@ -82,12 +82,13 @@ Deno.serve(async (req) => {
     }
 
     const toAddr =
+      storedAddressFromRecord(toAddress) ||
       storedAddressFromRecord(shipment.ship_to) ||
       pickDefaultAddress(buyer.addresses);
     if (!toAddr) {
       return json({
         error:
-          "No buyer shipping address on this order. The buyer must complete Stripe Checkout with a US address.",
+          "No destination address. Enter the recipient’s US street address in the label form, or ask them to save one under Account → Shipping Addresses.",
       }, 400);
     }
 
@@ -164,6 +165,14 @@ Deno.serve(async (req) => {
         carrier: rate.servicelevel?.name || "USPS",
         status: "accepted",
         events,
+        ship_to: {
+          name: toAddr.name,
+          street: toAddr.street1,
+          city: toAddr.city,
+          state: toAddr.state,
+          zip: toAddr.zip,
+          country: "US",
+        },
         ship_from: {
           name: from.name,
           street: from.street1,
