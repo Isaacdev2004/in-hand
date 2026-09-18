@@ -39,6 +39,7 @@ import { startStripeCheckout } from "./lib/stripeCheckout";
 import { createShippingLabel } from "./lib/shippoLabel";
 import { startStripeConnectOnboarding, transferSellerPayout } from "./lib/stripeConnect";
 import PaymentSheetModal from "./PaymentSheetModal";
+import ShipTab from "./ShipTab";
 import { fetchEbayMarketValue, getCachedMarketValue } from "./lib/ebayMarketValue";
 import {
   DEFAULT_USPS_RATES,
@@ -5741,120 +5742,20 @@ function AppShell({ onSignOut, authUser }) {
 
       {/* ── SHIPPING ── */}
       {tab==="shipping" && (
-        <div style={{ flex:1,overflowY:"auto",padding:"20px 20px 90px" }}>
-          <div style={{ fontWeight:800,fontSize:18,color:"#2C3E50",marginBottom:4 }}>📦 Shipping & Tracking</div>
-          <div style={{ fontSize:12,color:"#bbb",marginBottom:12 }}>All shipments use USPS Ground Advantage</div>
-          {shipActionCount > 0 && (
-            <div style={{ background:"#fff8e6",border:"1.5px solid #f9ca24",borderRadius:14,padding:"12px 14px",marginBottom:16,fontSize:12,color:"#9a6700",fontWeight:600 }}>
-              ⚠️ You have {shipActionCount} shipment{shipActionCount===1?"":"s"} waiting — generate a label or mark as shipped.
-            </div>
-          )}
-
-          {/* USPS rates info card */}
-          <div style={{ background:"linear-gradient(135deg,#2C3E50,#2d3561)",borderRadius:20,padding:"18px",marginBottom:20 }}>
-            <div style={{ fontWeight:800,fontSize:13,color:"#fff",marginBottom:12 }}>📮 USPS Ground Advantage Rates</div>
-            {(uspsRates || DEFAULT_USPS_RATES).map((r,i)=>(
-              <div key={i} style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,paddingBottom:8,borderBottom:i<(uspsRates || DEFAULT_USPS_RATES).length-1?"1px solid rgba(255,255,255,0.1)":"none" }}>
-                <div>
-                  <div style={{ fontSize:12,color:"rgba(255,255,255,0.9)",fontWeight:600 }}>{r.label}</div>
-                  <div style={{ fontSize:10,color:"rgba(255,255,255,0.4)" }}>Items up to ${i===(uspsRates || DEFAULT_USPS_RATES).length-1?"any value":r.maxValue}</div>
-                </div>
-                <div style={{ fontWeight:900,fontSize:15,color:"#00b894" }}>${Number(r.price).toFixed(2)}</div>
-              </div>
-            ))}
-          </div>
-
-          {/* Active shipments */}
-          {(() => {
-            const myShipments = (db.shipments||[]).filter(s=>s.fromUser===activeUserId||s.toUser===activeUserId);
-            if(myShipments.length===0) return <div style={{ textAlign:"center",padding:"40px 0",color:"#ccc" }}><div style={{ fontSize:48,marginBottom:12 }}>📭</div><div style={{ fontWeight:700,fontSize:15 }}>No shipments yet</div></div>;
-            return myShipments.map(s=>{
-              const isSeller = s.fromUser===activeUserId;
-              const statusColor = s.status==="delivered"?"#00b894":s.status==="in_transit"||s.status==="accepted"||s.status==="label_created"?"#3A7BD5":s.status==="out_for_delivery"?"#f9ca24":"#aaa";
-              const statusLabel = shipmentStatusLabel(s.status);
-              const stepIdx = trackingStepIndex(s.status);
-              const canDispute = s.status==="delivered" && s.toUser===activeUserId && s.deliveredAt && !s.fundsReleased && !s.disputeFrozen &&
-                ((Date.now() - new Date(s.deliveredAt).getTime()) / 86400000) <= 7;
-              return (
-                <div key={s.id} style={{ background:"#fff",borderRadius:20,padding:"16px",boxShadow:"0 2px 14px rgba(0,0,0,0.06)",border:"1px solid #E4EBF2",marginBottom:14 }}>
-                  {/* Header */}
-                  <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12 }}>
-                    <div>
-                      <div style={{ fontWeight:800,fontSize:14,color:"#2C3E50" }}>{s.figureName}</div>
-                      <div style={{ fontSize:11,color:"#aaa",marginTop:2 }}>{isSeller?"You're sending":"You're receiving"} · {s.carrier}</div>
-                    </div>
-                    <span style={{ fontSize:10,background:`${statusColor}18`,color:statusColor,borderRadius:8,padding:"3px 10px",fontWeight:800,maxWidth:140,textAlign:"center",lineHeight:1.3 }}>{statusLabel}</span>
-                  </div>
-
-                  {/* Mini progress */}
-                  <div style={{ display:"flex",gap:4,marginBottom:12,alignItems:"center" }}>
-                    {TRACKING_STEPS.map((step,i)=>(
-                      <div key={i} style={{ flex:1,height:4,borderRadius:4,background:i<=stepIdx?"#2C3E50":"#E4EBF2",transition:"background 0.3s" }} />
-                    ))}
-                  </div>
-
-                  {/* Tracking number */}
-                  {s.trackingNumber
-                    ? <div style={{ background:"#f9f9f9",borderRadius:10,padding:"8px 12px",marginBottom:12,display:"flex",alignItems:"center",gap:8 }}>
-                        <span style={{ fontSize:12 }}>🔢</span>
-                        <span style={{ fontFamily:"monospace",fontSize:11,color:"#555",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{s.trackingNumber}</span>
-                      </div>
-                    : isSeller && <div style={{ background:"#fff8e6",border:"1.5px dashed #f9ca24",borderRadius:10,padding:"8px 12px",marginBottom:12,fontSize:11,color:"#f0932b",fontWeight:600 }}>
-                        ⚠️ Generate your prepaid label below and ship the item
-                      </div>
-                  }
-
-                  {/* Escrow notice */}
-                  {!s.fundsReleased && s.status!=="delivered" && (
-                    <div style={{ background:"#EAF1FA",borderRadius:10,padding:"8px 12px",marginBottom:12,fontSize:11,color:"#3A7BD5",fontWeight:600 }}>
-                      🔒 ${fmt(s.figureValue)} held in escrow — releases on delivery
-                    </div>
-                  )}
-
-                  {/* Actions */}
-                  <div style={{ display:"flex",gap:8,flexWrap:"wrap" }}>
-                    {isSeller && !s.trackingNumber && (
-                      <button type="button" onClick={()=>setAddTrackingFor(s)} style={{ flex:2,minWidth:140,background:"linear-gradient(135deg,#2C3E50,#2d3561)",border:"none",borderRadius:12,padding:"9px",fontWeight:700,fontSize:12,color:"#fff",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6 }}>
-                        🏷️ Generate Shipping Label
-                      </button>
-                    )}
-                    {isSeller && s.trackingNumber && (s.status==="accepted" || s.status==="label_created") && (
-                      <button type="button" onClick={()=>handleMarkShipped(s)} style={{ flex:2,minWidth:140,background:"#3A7BD5",border:"none",borderRadius:12,padding:"9px",fontWeight:800,fontSize:12,color:"#fff",cursor:"pointer" }}>
-                        Mark as Shipped
-                      </button>
-                    )}
-                    {isSeller && s.status==="in_transit" && !s.fundsReleased && (
-                      <div style={{ flex:1,background:"#f0fff8",borderRadius:12,padding:"9px",fontWeight:700,fontSize:11,color:"#00b894",textAlign:"center" }}>📮 On the way</div>
-                    )}
-                    <button type="button" onClick={()=>setTrackingModal(s)} style={{ flex:1,minWidth:80,background:"#EEF2F7",border:"none",borderRadius:12,padding:"9px",fontWeight:700,fontSize:12,color:"#555",cursor:"pointer" }}>Track</button>
-                    {canDispute && (
-                      <button type="button" onClick={()=>{
-                        const txn = db.transactions.find(t=>t.id===s.txnId);
-                        if (txn) setDisputeModal({ txn, shipment:s, disputeKind: txn.type==="trade"?"trade":"purchase" });
-                      }} style={{ flex:1,minWidth:100,background:"#fff0f0",border:"2px solid #ff6b6b",borderRadius:12,padding:"9px",fontWeight:700,fontSize:11,color:"#ff6b6b",cursor:"pointer" }}>
-                        Dispute (7d)
-                      </button>
-                    )}
-                    {s.fundsReleased && <div style={{ flex:1,background:"#f0fff8",borderRadius:12,padding:"9px",fontWeight:700,fontSize:12,color:"#00b894",textAlign:"center" }}>✅ {s.autoReleased?"Auto-paid":"Paid out"}</div>}
-                  </div>
-
-                  {/* Auto-release countdown */}
-                  {s.status==="delivered" && !s.fundsReleased && s.deliveredAt && (() => {
-                    const hoursLeft = Math.max(0, 168 - (Date.now() - new Date(s.deliveredAt).getTime()) / 3600000);
-                    const hh = Math.floor(hoursLeft);
-                    const mm = Math.floor((hoursLeft - hh) * 60);
-                    return (
-                      <div style={{ background:"#fff8e6",borderRadius:10,padding:"8px 12px",marginTop:10,display:"flex",alignItems:"center",justifyContent:"space-between" }}>
-                        <span style={{ fontSize:11,fontWeight:600,color:"#f0932b" }}>⏱️ Auto-release in</span>
-                        <span style={{ fontWeight:900,fontSize:14,color:"#f0932b" }}>{hh}h {mm}m</span>
-                      </div>
-                    );
-                  })()}
-                </div>
-              );
-            });
-          })()}
-        </div>
+        <ShipTab
+          shipments={db.shipments || []}
+          transactions={db.transactions || []}
+          cards={db.cards || []}
+          activeUserId={activeUserId}
+          getUser={getUser}
+          fmt={fmt}
+          onLabelCreated={handleLabelCreated}
+          onMarkShipped={handleMarkShipped}
+          onTrack={(s) => setTrackingModal(s)}
+          onOpenMessages={(otherId, card) => openThread(otherId, card)}
+          onNotify={notify}
+          onOpenAddresses={() => setShowAddressModal(true)}
+        />
       )}
 
       {/* ── WALLET ── */}
