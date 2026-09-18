@@ -1410,6 +1410,43 @@ function AddUserModal({ onSave, onClose }) {
 
 // ─── FIGURE IMAGE ─────────────────────────────────────────────────────────────
 // Shows real photo if available, falls back to emoji; optional short video (YouTube / Vimeo / mp4)
+function isHttpImageUrl(value) {
+  if (!value || typeof value !== "string") return false;
+  const v = value.trim();
+  return /^https?:\/\//i.test(v) || v.startsWith("data:image") || /supabase\.co\/storage/i.test(v);
+}
+
+/** Tiny listing badge for Messages — never dump raw storage URLs as text. */
+function ListingThumb({ src, size = 28, fallback = "📦", radius = 8, style = {} }) {
+  if (isHttpImageUrl(src)) {
+    return (
+      <img
+        src={src.trim()}
+        alt=""
+        style={{
+          width: size,
+          height: size,
+          borderRadius: radius,
+          objectFit: "cover",
+          flexShrink: 0,
+          background: "#E4EBF2",
+          ...style,
+        }}
+      />
+    );
+  }
+  if (src && src.length <= 4) {
+    return <span style={{ fontSize: Math.max(14, size * 0.65), lineHeight: 1, flexShrink: 0, ...style }}>{src}</span>;
+  }
+  return <span style={{ fontSize: Math.max(12, size * 0.5), lineHeight: 1, flexShrink: 0, ...style }}>{fallback}</span>;
+}
+
+function messagePreviewLabel(text) {
+  if (!text) return "";
+  if (isHttpImageUrl(text)) return "📷 Photo";
+  return text;
+}
+
 function FigureImage({ card, size=62, borderRadius=16, onClick, onVideoOpen, style={} }) {
   const { light } = lc(card.line);
   const hasPhotos = card.photos?.length > 0;
@@ -2447,12 +2484,12 @@ function MessagingScreen({ threads, activeThreadId, setActiveThread, currentUser
               </div>
               {th.cardName && (
                 <div style={{ display:"flex", alignItems:"center", gap:5, marginBottom:4 }}>
-                  <span style={{ fontSize:14 }}>{th.cardImage}</span>
+                  <ListingThumb src={th.cardImage} size={18} radius={5} />
                   <span style={{ fontSize:10, color:"#aaa", fontWeight:600 }}>{th.cardName}</span>
                 </div>
               )}
               <div style={{ fontSize:12, color:isUnread?"#2C3E50":"#aaa", fontWeight:isUnread?700:400, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
-                {lastMsg ? (lastMsg.from===currentUserId?"You: ":"")+lastMsg.text : "Start the conversation"}
+                {lastMsg ? (lastMsg.from===currentUserId?"You: ":"")+messagePreviewLabel(lastMsg.text) : "Start the conversation"}
               </div>
               {th.flagCount > 0 && <span style={{ fontSize:9, background:"#fff0f0", color:"#ff6b6b", borderRadius:5, padding:"1px 6px", fontWeight:700 }}>⚠️ {th.flagCount} flagged</span>}
             </div>
@@ -2484,7 +2521,7 @@ function MessagingScreen({ threads, activeThreadId, setActiveThread, currentUser
         </div>
         {thread?.cardImage && (
           <div style={{ background:"#EEF2F7", borderRadius:10, padding:"5px 10px", display:"flex", alignItems:"center", gap:6 }}>
-            <span style={{ fontSize:18 }}>{thread.cardImage}</span>
+            <ListingThumb src={thread.cardImage} size={22} radius={6} />
             <span style={{ fontSize:10, fontWeight:700, color:"#555", maxWidth:80, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{thread.cardName}</span>
           </div>
         )}
@@ -2534,8 +2571,12 @@ function MessagingScreen({ threads, activeThreadId, setActiveThread, currentUser
                 <div style={{ width:28, height:28, borderRadius:"50%", background:"#E4EBF2", display:"flex", alignItems:"center", justifyContent:"center", fontSize:16, flexShrink:0, opacity:showAvatar?1:0 }}>{other?.avatar}</div>
               )}
               <div style={{ maxWidth:"72%" }}>
-                <div style={{ background:isMe?"#2C3E50":"#EEF2F7", color:isMe?"#fff":"#2C3E50", borderRadius:isMe?"18px 18px 4px 18px":"18px 18px 18px 4px", padding:"10px 14px", fontSize:13, lineHeight:1.4, fontWeight:500, boxShadow:isMe?"0 2px 8px rgba(26,26,46,0.2)":"0 1px 4px rgba(0,0,0,0.06)" }}>
-                  {msg.text}
+                <div style={{ background:isMe?"#2C3E50":"#EEF2F7", color:isMe?"#fff":"#2C3E50", borderRadius:isMe?"18px 18px 4px 18px":"18px 18px 18px 4px", padding:isHttpImageUrl(msg.text)?"6px":"10px 14px", fontSize:13, lineHeight:1.4, fontWeight:500, boxShadow:isMe?"0 2px 8px rgba(26,26,46,0.2)":"0 1px 4px rgba(0,0,0,0.06)", overflow:"hidden" }}>
+                  {isHttpImageUrl(msg.text) ? (
+                    <img src={msg.text.trim()} alt="Shared photo" style={{ display:"block", maxWidth:"100%", maxHeight:220, borderRadius:12, objectFit:"cover" }} />
+                  ) : (
+                    msg.text
+                  )}
                 </div>
                 <div style={{ fontSize:9, color:"#ccc", marginTop:3, textAlign:isMe?"right":"left" }}>{msg.ts}</div>
               </div>
@@ -5100,7 +5141,7 @@ function AppShell({ onSignOut, authUser }) {
       participants: [activeUserId, otherUserId],
       cardId: card?.id || null,
       cardName: card?.name || null,
-      cardImage: card?.image || null,
+      cardImage: card?.photos?.[0] || card?.image || null,
       messages: [],
     };
     if (supabase) {
@@ -6285,7 +6326,11 @@ function AppShell({ onSignOut, authUser }) {
               <div style={{ display:"flex",justifyContent:"flex-end",marginBottom:12 }}><button onClick={()=>setShowAddCard(true)} style={{ background:"#2C3E50",border:"none",borderRadius:10,padding:"7px 14px",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer" }}>+ Add Card</button></div>
               {db.cards.map(card=>{ const {from,light}=lc(card.line); const owner=getUser(card.ownerId); return (
                 <div key={card.id} style={{ background:"#fff",borderRadius:16,padding:"12px 14px",boxShadow:"0 2px 10px rgba(0,0,0,0.05)",border:"1px solid #E4EBF2",marginBottom:8,display:"flex",alignItems:"center",gap:12 }}>
-                  <div style={{ width:48,height:48,borderRadius:12,background:light,display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,flexShrink:0 }}>{card.image}</div>
+                  <div style={{ width:48,height:48,borderRadius:12,background:light,display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,flexShrink:0,overflow:"hidden" }}>
+                    {isHttpImageUrl(card.image) || card.photos?.[0]
+                      ? <img src={(card.photos?.[0] || card.image)} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+                      : card.image}
+                  </div>
                   <div style={{ flex:1,minWidth:0 }}>
                     <div style={{ fontWeight:700,fontSize:13,color:"#2C3E50" }}>{card.name}</div>
                     <div style={{ fontSize:10,color:"#bbb" }}>{card.line} · {condLabel(card.isNew)} · <span style={{ color:from,fontWeight:800 }}>${card.value}</span></div>
