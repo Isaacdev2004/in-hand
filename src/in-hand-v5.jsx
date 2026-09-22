@@ -403,7 +403,72 @@ const EMPTY_DB = {
 };
 const fmt = (n) => n.toFixed(2);
 
+/** Card IDs locked in any pending trade proposal. */
+function pendingTradeCardIds(proposals) {
+  const ids = new Set();
+  for (const p of proposals || []) {
+    if (p.status !== "pending") continue;
+    if (p.targetCardId) ids.add(p.targetCardId);
+    for (const id of p.offeredCardIds || []) ids.add(id);
+  }
+  return ids;
+}
+
+function proposalCardIds(proposal) {
+  const ids = [];
+  if (proposal?.targetCardId) ids.push(proposal.targetCardId);
+  for (const id of proposal?.offeredCardIds || []) ids.push(id);
+  return [...new Set(ids)];
+}
+
+function cardNamesForIds(cards, ids) {
+  return ids
+    .map((id) => cards.find((c) => c.id === id)?.name)
+    .filter(Boolean);
+}
+
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
+function TradeAcceptedGuide({ proposal, cards, tradeFee, onPayFee, onGoShip, onClose }) {
+  const names = cardNamesForIds(cards, proposalCardIds(proposal));
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 900, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+      <div style={{ background: "#fff", borderRadius: "28px 28px 0 0", padding: "24px 20px 40px", width: "100%", maxWidth: 430, maxHeight: "90vh", overflowY: "auto" }}>
+        <div style={{ textAlign: "center", marginBottom: 18 }}>
+          <div style={{ fontSize: 48, marginBottom: 8 }}>🤝</div>
+          <div style={{ fontWeight: 900, fontSize: 20, color: "#2C3E50" }}>Trade accepted!</div>
+          <div style={{ fontSize: 13, color: "#888", marginTop: 8, lineHeight: 1.5 }}>
+            Complete these steps so both figures ship safely.
+          </div>
+        </div>
+        {names.length > 0 && (
+          <div style={{ background: "#f7f9fc", borderRadius: 14, padding: "12px 14px", marginBottom: 16, fontSize: 12, color: "#555", fontWeight: 600 }}>
+            {names.join(" ⇄ ")}
+          </div>
+        )}
+        <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 16 }}>
+          <div style={{ background: "#EAF1FA", borderRadius: 16, padding: "14px 16px" }}>
+            <div style={{ fontWeight: 800, fontSize: 14, color: "#2C3E50", marginBottom: 4 }}>1. Pay your ${fmt(tradeFee)} trade fee</div>
+            <div style={{ fontSize: 12, color: "#666", lineHeight: 1.45, marginBottom: 12 }}>Each party pays ${fmt(tradeFee)} via card / Apple Pay.</div>
+            <button type="button" onClick={onPayFee} style={{ width: "100%", background: "#2C3E50", border: "none", borderRadius: 12, padding: "12px", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer" }}>
+              Pay ${fmt(tradeFee)} trade fee →
+            </button>
+          </div>
+          <div style={{ background: "#fff8e6", borderRadius: 16, padding: "14px 16px" }}>
+            <div style={{ fontWeight: 800, fontSize: 14, color: "#2C3E50", marginBottom: 4 }}>2. Generate your shipping label</div>
+            <div style={{ fontSize: 12, color: "#666", lineHeight: 1.45, marginBottom: 12 }}>Open Ship — your card is ready. Tap Generate Label (addresses pre-filled).</div>
+            <button type="button" onClick={onGoShip} style={{ width: "100%", background: "linear-gradient(135deg,#f0932b,#f9ca24)", border: "none", borderRadius: 12, padding: "12px", color: "#2C3E50", fontWeight: 800, fontSize: 14, cursor: "pointer" }}>
+              Go to Ship → Generate Label
+            </button>
+          </div>
+        </div>
+        <button type="button" onClick={onClose} style={{ width: "100%", background: "#EEF2F7", border: "none", borderRadius: 12, padding: "12px", color: "#555", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+          I’ll do this in a moment
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function computeMatch(myCards, theirCard, myWishlist) {
   const tradeable = myCards.filter(c => c.wantsTrade);
   if (!tradeable.length) return 50;
@@ -3905,6 +3970,7 @@ function AppShell({ onSignOut, authUser }) {
   const [paymentSheet, setPaymentSheet] = useState(null); // { mode: 'purchase'|'trade_fee', card?, amountCents, ... }
   const [trackingModal, setTrackingModal] = useState(null);
   const [addTrackingFor, setAddTrackingFor] = useState(null);
+  const [tradeGuide, setTradeGuide] = useState(null); // { proposal } after accept
   const [marketModal, setMarketModal] = useState(null);
   const [showAddressModal, setShowAddressModal] = useState(false);
   const [disputeModal, setDisputeModal] = useState(null);
@@ -4118,7 +4184,8 @@ function AppShell({ onSignOut, authUser }) {
   const getUser = id => db.users.find(u=>u.id===id);
   const myUser = getUser(activeUserId);
   const myCards = db.cards.filter(c=>c.ownerId===activeUserId);
-  const myTradeable = myCards.filter(c=>c.wantsTrade);
+  const myTradeable = myCards.filter((c) => c.wantsTrade && !pendingTradeCardIds(db.tradeProposals).has(c.id));
+  const lockedTradeIds = pendingTradeCardIds(db.tradeProposals);
   const otherCards = db.cards.filter(c=>c.ownerId!==activeUserId);
   const myTxns = db.transactions.filter(t=>t.buyerId===activeUserId||t.sellerId===activeUserId);
   const myTradeProposals = (db.tradeProposals || []).filter(
@@ -4341,6 +4408,7 @@ function AppShell({ onSignOut, authUser }) {
   const enriched = otherCards.map(c=>({ ...c, owner:getUser(c.ownerId), matchScore:computeMatch(myCards,c,myUser?.wishlist||[]) }));
   const filtered = enriched.filter(c=>{
     const q=search.toLowerCase();
+    if (lockedTradeIds.has(c.id)) return false; // pending trade — hide from Browse
     return (!q||c.name.toLowerCase().includes(q)||c.line.toLowerCase().includes(q)||c.tags.some(t=>t.includes(q))||c.owner?.username.toLowerCase().includes(q))
       && (brandFilter==="All"||c.brand===brandFilter)
       && (lineFilter==="All"||c.line===lineFilter)
@@ -4348,6 +4416,11 @@ function AppShell({ onSignOut, authUser }) {
   }).sort((a,b)=>sortBy==="match"?b.matchScore-a.matchScore:b.value-a.value);
 
   const handleSendTradeProposal = async ({ targetCard, offeredCardIds, topupSuggested }) => {
+    const locked = pendingTradeCardIds(db.tradeProposals);
+    if (locked.has(targetCard.id) || offeredCardIds.some((id) => locked.has(id))) {
+      notify("❌ One of these figures is already in a pending trade");
+      return;
+    }
     const proposal = {
       id: "tp" + Date.now(),
       proposerId: activeUserId,
@@ -4386,7 +4459,7 @@ function AppShell({ onSignOut, authUser }) {
       ...d,
       tradeProposals: [proposal, ...(d.tradeProposals || [])],
     }));
-    notify("🤝 Trade proposal sent!");
+    notify("🤝 Trade proposal sent — figures marked In Trade until it resolves");
     setTab("trades");
     setTradesView("proposals");
   };
@@ -4501,8 +4574,8 @@ function AppShell({ onSignOut, authUser }) {
           recipientId: uid,
           type: "trade_accepted",
           read: false,
-          title: "🤝 Trade accepted! Time to ship your figure",
-          body: "Generate your USPS shipping label in the Ship tab.",
+          title: "🤝 Trade accepted — next steps",
+          body: `Pay your $${fmt(TRADE_FEE)} trade fee, then generate your USPS label in the Ship tab.`,
           link: "shipping",
           relatedUserId: uid === proposal.proposerId ? proposal.receiverId : proposal.proposerId,
         });
@@ -4515,11 +4588,6 @@ function AppShell({ onSignOut, authUser }) {
         if (proposal.offeredCardIds.includes(c.id)) return { ...c, ownerId: proposal.receiverId, wantsTrade: false, wantsBuy: false };
         return c;
       });
-      const newUsers = d.users.map((u) => {
-        if (u.id === proposal.proposerId) return { ...u, walletBalance: parseFloat((u.walletBalance - TRADE_FEE).toFixed(2)) };
-        if (u.id === proposal.receiverId) return { ...u, walletBalance: parseFloat((u.walletBalance - TRADE_FEE).toFixed(2)) };
-        return u;
-      });
       const ts = new Date().toISOString().slice(0, 16).replace("T", " ");
       const localNotifs = [proposal.proposerId, proposal.receiverId]
         .filter((uid) => uid === activeUserId)
@@ -4528,14 +4596,13 @@ function AppShell({ onSignOut, authUser }) {
           type: "trade_accepted",
           read: false,
           ts,
-          title: "🤝 Trade accepted! Time to ship your figure",
-          body: "Generate your USPS shipping label in the Ship tab.",
+          title: "🤝 Trade accepted — next steps",
+          body: `Pay your $${fmt(TRADE_FEE)} trade fee, then generate your USPS label in Ship.`,
           link: "shipping",
           userId: uid === proposal.proposerId ? proposal.receiverId : proposal.proposerId,
         }));
       return {
         ...d,
-        users: newUsers,
         cards: newCards,
         transactions: [...txns, ...d.transactions],
         shipments: [...tradeShips, ...(d.shipments || [])],
@@ -4550,33 +4617,111 @@ function AppShell({ onSignOut, authUser }) {
     const agreed = { ...proposal, topupAgreed: proposal.topupSuggested, topupStatus: proposal.topupSuggested > 0 ? "accepted" : proposal.topupStatus };
     const ok = await executeTradeSwap(agreed);
     if (ok) {
-      notify("🤝 Trade accepted! Time to ship — open the Ship tab");
-      setTab("shipping");
+      setTradeGuide({ proposal: agreed });
+      notify("🤝 Trade accepted — pay fee & generate your label");
     }
   };
 
   const handleDeclineTradeProposal = async (proposalId) => {
+    const proposal = (db.tradeProposals || []).find((p) => p.id === proposalId);
     if (supabase) {
       const { error } = await updateTradeProposal(proposalId, { status: "declined", topupStatus: "declined" });
       if (error) console.error("In Hand: decline trade proposal failed", error);
     }
+    const ids = proposal ? proposalCardIds(proposal) : [];
+    const names = cardNamesForIds(db.cards, ids);
+    const nameStr = names.length ? names.join(", ") : "your figure";
+    const body = `${nameStr} ${names.length > 1 ? "are" : "is"} available again (trade declined).`;
+    const nBase = Date.now();
+    const recipients = proposal ? [...new Set([proposal.proposerId, proposal.receiverId].filter(Boolean))] : [];
+    if (supabase && proposal) {
+      for (const uid of recipients) {
+        await insertNotification({
+          id: `n_trade_back_${proposal.id}_${uid}_${nBase}`,
+          recipientId: uid,
+          type: "trade_available",
+          read: false,
+          title: "Figure back available",
+          body,
+          link: "vault",
+          relatedUserId: uid === proposal.proposerId ? proposal.receiverId : proposal.proposerId,
+        });
+      }
+    }
+    const ts = new Date().toISOString().slice(0, 16).replace("T", " ");
     setDb((d) => ({
       ...d,
       tradeProposals: (d.tradeProposals || []).map((p) => (p.id === proposalId ? { ...p, status: "declined", topupStatus: p.topupSuggested > 0 ? "declined" : p.topupStatus } : p)),
+      notifications: proposal
+        ? [
+            ...recipients
+              .filter((uid) => uid === activeUserId)
+              .map((uid) => ({
+                id: `n_trade_back_${proposal.id}_${uid}_local`,
+                type: "trade_available",
+                read: false,
+                ts,
+                title: "Figure back available",
+                body,
+                link: "vault",
+                userId: uid === proposal.proposerId ? proposal.receiverId : proposal.proposerId,
+              })),
+            ...(d.notifications || []),
+          ]
+        : d.notifications,
     }));
-    notify("Trade declined");
+    notify("Trade declined — figures are available again");
   };
 
   const handleWithdrawTradeProposal = async (proposalId) => {
+    const proposal = (db.tradeProposals || []).find((p) => p.id === proposalId);
     if (supabase) {
       const { error } = await updateTradeProposal(proposalId, { status: "withdrawn" });
       if (error) console.error("In Hand: withdraw trade proposal failed", error);
     }
+    const ids = proposal ? proposalCardIds(proposal) : [];
+    const names = cardNamesForIds(db.cards, ids);
+    const nameStr = names.length ? names.join(", ") : "your figure";
+    const body = `${nameStr} ${names.length > 1 ? "are" : "is"} available again (trade withdrawn).`;
+    const nBase = Date.now();
+    const recipients = proposal ? [...new Set([proposal.proposerId, proposal.receiverId].filter(Boolean))] : [];
+    if (supabase && proposal) {
+      for (const uid of recipients) {
+        await insertNotification({
+          id: `n_trade_back_${proposal.id}_${uid}_${nBase}`,
+          recipientId: uid,
+          type: "trade_available",
+          read: false,
+          title: "Figure back available",
+          body,
+          link: "vault",
+          relatedUserId: uid === proposal.proposerId ? proposal.receiverId : proposal.proposerId,
+        });
+      }
+    }
+    const ts = new Date().toISOString().slice(0, 16).replace("T", " ");
     setDb((d) => ({
       ...d,
       tradeProposals: (d.tradeProposals || []).map((p) => (p.id === proposalId ? { ...p, status: "withdrawn" } : p)),
+      notifications: proposal
+        ? [
+            ...recipients
+              .filter((uid) => uid === activeUserId)
+              .map((uid) => ({
+                id: `n_trade_back_${proposal.id}_${uid}_local`,
+                type: "trade_available",
+                read: false,
+                ts,
+                title: "Figure back available",
+                body,
+                link: "vault",
+                userId: uid === proposal.proposerId ? proposal.receiverId : proposal.proposerId,
+              })),
+            ...(d.notifications || []),
+          ]
+        : d.notifications,
     }));
-    notify("Proposal withdrawn");
+    notify("Proposal withdrawn — figures are available again");
   };
 
   const handleCounterTopup = async (proposalId, amount) => {
@@ -4811,6 +4956,10 @@ function AppShell({ onSignOut, authUser }) {
   const handleToggleListing = async (cardId, field) => {
     const card = db.cards.find((c) => c.id === cardId);
     if (!card) return;
+    if (lockedTradeIds.has(cardId)) {
+      notify("This figure is In Trade — finish, decline, or withdraw the proposal first");
+      return;
+    }
     const nextVal = !card[field];
     if (supabase) {
       const { error } = await updateListing(cardId, { [field]: nextVal });
@@ -5362,16 +5511,47 @@ function AppShell({ onSignOut, authUser }) {
           defaultShipping={paymentSheet.defaultShipping}
           metadata={paymentSheet.metadata || {}}
           onSuccess={async () => {
+            const mode = paymentSheet.mode;
             setPaymentSheet(null);
-            if (paymentSheet.mode === "purchase") {
+            if (mode === "purchase") {
               notify("✅ Payment submitted — order appears after Stripe confirms");
               setTimeout(() => { if (supabase) reloadFromSupabase?.(); }, 2500);
               setTab("shipping");
+            } else if (mode === "trade_fee") {
+              notify("✅ Trade fee paid — next: generate your shipping label");
+              setTradeGuide(null);
+              setTab("shipping");
             } else {
-              notify("✅ Trade fee paid");
+              notify("✅ Payment complete");
             }
           }}
           onClose={() => setPaymentSheet(null)}
+        />
+      )}
+      {tradeGuide && (
+        <TradeAcceptedGuide
+          proposal={tradeGuide.proposal}
+          cards={db.cards}
+          tradeFee={TRADE_FEE}
+          onPayFee={() => {
+            setPaymentSheet({
+              mode: "trade_fee",
+              listingId: tradeGuide.proposal?.targetCardId || null,
+              amountCents: Math.round(TRADE_FEE * 100),
+              amountLabel: `$${fmt(TRADE_FEE)}`,
+              requireShipping: false,
+              metadata: {
+                proposal_id: tradeGuide.proposal?.id || "",
+                purpose: "trade_fee",
+              },
+            });
+          }}
+          onGoShip={() => {
+            setTradeGuide(null);
+            setTab("shipping");
+            notify("Generate your label on the shipment card below");
+          }}
+          onClose={() => setTradeGuide(null)}
         />
       )}
       {marketModal && <MarketValueModal card={marketModal} onClose={()=>setMarketModal(null)} />}
@@ -5964,7 +6144,7 @@ function AppShell({ onSignOut, authUser }) {
                         <div style={{ display:"flex",flexDirection:"column",gap:8 }}>
                           <div style={{ textAlign:"center",fontSize:11,color:"#00b894",fontWeight:700 }}>🤝 Trade accepted — time to ship</div>
                           {needsLabel ? (
-                            <button type="button" onClick={()=>setAddTrackingFor(myOutbound)} style={{ width:"100%",background:"linear-gradient(135deg,#2C3E50,#2d3561)",border:"none",borderRadius:12,padding:"12px",fontWeight:800,fontSize:13,color:"#fff",cursor:"pointer" }}>
+                            <button type="button" onClick={()=>{ setTab("shipping"); notify("Open your shipment card below to Generate Label"); }} style={{ width:"100%",background:"linear-gradient(135deg,#2C3E50,#2d3561)",border:"none",borderRadius:12,padding:"12px",fontWeight:800,fontSize:13,color:"#fff",cursor:"pointer" }}>
                               🏷️ Generate Shipping Label
                             </button>
                           ) : (
@@ -6122,16 +6302,19 @@ function AppShell({ onSignOut, authUser }) {
 
           {vaultFiltered.length === 0 && myCards.length > 0 ? (
             <div style={{ textAlign:"center",padding:"32px 16px",color:"#aaa",fontSize:13 }}>No figures in this filter.</div>
-          ) : vaultFiltered.map(fig=>{ const {from}=lc(fig.line); return (
+          ) : vaultFiltered.map(fig=>{ const {from}=lc(fig.line); const inTrade = lockedTradeIds.has(fig.id); return (
             <div key={fig.id} className="inhand-vault-card">
               <div style={{ position:"relative", flexShrink:0 }}>
                 <FigureImage card={fig} size={96} borderRadius={18} onClick={fig.photos?.length>0?()=>setPhotoViewer({photos:fig.photos,startIdx:0}):undefined} onVideoOpen={() => { const e = getListingVideoEmbed(fig.videoUrl); if (e) setListingVideoModal(e); }} />
-                {fig.wantsTrade&&<div style={{ position:"absolute",top:-4,right:-4,width:14,height:14,background:"#00b894",borderRadius:"50%",border:"2px solid #fff" }} />}
+                {inTrade
+                  ? <div style={{ position:"absolute",top:-6,left:-6,background:"#f0932b",color:"#fff",fontSize:9,fontWeight:800,borderRadius:8,padding:"3px 7px",border:"2px solid #fff" }}>In Trade</div>
+                  : fig.wantsTrade ? <div style={{ position:"absolute",top:-4,right:-4,width:14,height:14,background:"#00b894",borderRadius:"50%",border:"2px solid #fff" }} /> : null}
               </div>
               <div style={{ flex:1, minWidth:0 }}>
                 <div style={{ fontWeight:800,fontSize:16,color:"#2C3E50",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{fig.name}</div>
                 <div style={{ fontSize:12,color:"#bbb",marginTop:2 }}>{fig.line}</div>
-                {fig.description && <div style={{ fontSize:12,color:"#888",marginTop:4,lineHeight:1.4 }}>{fig.description}</div>}
+                {inTrade && <div style={{ fontSize:11,color:"#f0932b",fontWeight:700,marginTop:4 }}>Locked until this trade is accepted, declined, or withdrawn</div>}
+                {fig.description && !inTrade && <div style={{ fontSize:12,color:"#888",marginTop:4,lineHeight:1.4 }}>{fig.description}</div>}
                 <div style={{ display:"flex",gap:8,marginTop:8,alignItems:"center",flexWrap:"wrap" }}><span style={{ fontSize:11,fontWeight:800,background:condBg(fig.isNew),color:condColor(fig.isNew),borderRadius:6,padding:"3px 9px" }}>{condLabel(fig.isNew)}</span><span style={{ fontWeight:800,fontSize:16,color:from }}>${fig.value}</span></div>
               </div>
               <div style={{ display:"flex", flexDirection:"column", alignItems:"stretch", gap:7, minWidth:84 }}>
@@ -6142,8 +6325,8 @@ function AppShell({ onSignOut, authUser }) {
                 >
                   <span aria-hidden="true">✏️</span> Edit
                 </button>
-                <button type="button" onClick={()=>handleToggleListing(fig.id,"wantsTrade")} style={{ background:fig.wantsTrade?"#e8fff6":"#EEF2F7", border:"none", borderRadius:10, padding:"7px 8px", fontSize:10, fontWeight:700, color:fig.wantsTrade?"#00b894":"#888", cursor:"pointer" }}>{fig.wantsTrade?"⇄ Trade on":"⇄ Trade off"}</button>
-                <button type="button" onClick={()=>handleToggleListing(fig.id,"wantsBuy")} style={{ background:fig.wantsBuy?"#fff8e6":"#EEF2F7", border:"none", borderRadius:10, padding:"7px 8px", fontSize:10, fontWeight:700, color:fig.wantsBuy?"#f0932b":"#888", cursor:"pointer" }}>{fig.wantsBuy?"💰 Sale on":"💰 Sale off"}</button>
+                <button type="button" disabled={inTrade} onClick={()=>handleToggleListing(fig.id,"wantsTrade")} style={{ background:fig.wantsTrade?"#e8fff6":"#EEF2F7", border:"none", borderRadius:10, padding:"7px 8px", fontSize:10, fontWeight:700, color:inTrade?"#aaa":(fig.wantsTrade?"#00b894":"#888"), cursor:inTrade?"not-allowed":"pointer", opacity:inTrade?0.6:1 }}>{inTrade?"In Trade":(fig.wantsTrade?"⇄ Trade on":"⇄ Trade off")}</button>
+                <button type="button" disabled={inTrade} onClick={()=>handleToggleListing(fig.id,"wantsBuy")} style={{ background:fig.wantsBuy?"#fff8e6":"#EEF2F7", border:"none", borderRadius:10, padding:"7px 8px", fontSize:10, fontWeight:700, color:inTrade?"#aaa":(fig.wantsBuy?"#f0932b":"#888"), cursor:inTrade?"not-allowed":"pointer", opacity:inTrade?0.6:1 }}>{fig.wantsBuy?"💰 Sale on":"💰 Sale off"}</button>
                 <button type="button" onClick={()=>setEditingPhotos(fig.id)} style={{ background:"#EAF1FA", border:"none", borderRadius:10, padding:"6px 8px", fontSize:10, fontWeight:700, color:"#3A7BD5", cursor:"pointer", whiteSpace:"nowrap" }}>
                   📷 {fig.photos?.length||0}
                 </button>
