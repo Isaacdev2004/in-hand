@@ -35,7 +35,6 @@ import {
   markNotificationRead,
   markAllNotificationsRead,
 } from "./lib/marketplaceApi";
-import { startStripeCheckout } from "./lib/stripeCheckout";
 import { createShippingLabel } from "./lib/shippoLabel";
 import { startStripeConnectOnboarding, transferSellerPayout } from "./lib/stripeConnect";
 import PaymentSheetModal from "./PaymentSheetModal";
@@ -1166,7 +1165,7 @@ function PhotoPicker({ photos, onChange, maxPhotos = 4 }) {
         {/* Existing photos */}
         {photos.map((src, i) => (
           <div key={i} style={{ position:"relative", borderRadius:14, overflow:"hidden", aspectRatio:"1", background:"#E4EBF2", boxShadow: i===0?"0 0 0 2px #2C3E50":"none" }}>
-            <img src={src} alt={`photo ${i+1}`} style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+            <img src={src} alt={`${i + 1}`} style={{ width:"100%", height:"100%", objectFit:"cover" }} />
             {i === 0 && (
               <div style={{ position:"absolute", top:6, left:6, background:"#2C3E50", borderRadius:6, fontSize:9, padding:"2px 7px", color:"#fff", fontWeight:700 }}>COVER</div>
             )}
@@ -1270,7 +1269,7 @@ function PhotoViewer({ photos, startIdx = 0, onClose }) {
   return (
     <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.95)", zIndex:900, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center" }}>
       <button onClick={onClose} style={{ position:"absolute", top:20, right:20, background:"rgba(255,255,255,0.15)", border:"none", borderRadius:"50%", width:40, height:40, color:"#fff", fontSize:20, cursor:"pointer" }}>✕</button>
-      <img src={photos[idx]} alt={`Photo ${idx+1}`} style={{ maxWidth:"100%", maxHeight:"80vh", objectFit:"contain", borderRadius:12 }} />
+      <img src={photos[idx]} alt={`${idx + 1} of ${photos.length}`} style={{ maxWidth:"100%", maxHeight:"80vh", objectFit:"contain", borderRadius:12 }} />
       {/* Dots */}
       {photos.length > 1 && (
         <div style={{ display:"flex", gap:8, marginTop:20 }}>
@@ -1590,7 +1589,7 @@ function SwipeCard({ card, owner, matchScore, onSwipe, isTop, stackIndex, onOpen
             <div style={{ display:"flex",gap:6,marginBottom:12,overflowX:"auto" }}>
               {card.photos.map((p,i)=>(
                 <div key={i} style={{ width:48,height:48,borderRadius:10,overflow:"hidden",flexShrink:0,border:i===0?"2px solid #2C3E50":"2px solid transparent" }}>
-                  <img src={p} alt={`photo ${i+1}`} style={{ width:"100%",height:"100%",objectFit:"cover" }} />
+                  <img src={p} alt={`${i + 1}`} style={{ width:"100%",height:"100%",objectFit:"cover" }} />
                 </div>
               ))}
             </div>
@@ -2639,7 +2638,7 @@ function MessagingScreen({ threads, activeThreadId, setActiveThread, currentUser
               <div style={{ maxWidth:"72%" }}>
                 <div style={{ background:isMe?"#2C3E50":"#EEF2F7", color:isMe?"#fff":"#2C3E50", borderRadius:isMe?"18px 18px 4px 18px":"18px 18px 18px 4px", padding:isHttpImageUrl(msg.text)?"6px":"10px 14px", fontSize:13, lineHeight:1.4, fontWeight:500, boxShadow:isMe?"0 2px 8px rgba(26,26,46,0.2)":"0 1px 4px rgba(0,0,0,0.06)", overflow:"hidden" }}>
                   {isHttpImageUrl(msg.text) ? (
-                    <img src={msg.text.trim()} alt="Shared photo" style={{ display:"block", maxWidth:"100%", maxHeight:220, borderRadius:12, objectFit:"cover" }} />
+                    <img src={msg.text.trim()} alt="Attachment" style={{ display:"block", maxWidth:"100%", maxHeight:220, borderRadius:12, objectFit:"cover" }} />
                   ) : (
                     msg.text
                   )}
@@ -5809,7 +5808,7 @@ function AppShell({ onSignOut, authUser }) {
           )}
           {viewMode==="list"
             ? filtered.map(card => {
-                const {from,light}=lc(card.line); const sc=card.matchScore>=85?"#00b894":card.matchScore>=70?"#f9ca24":"#4A90D9";
+                const { from } = lc(card.line); const sc=card.matchScore>=85?"#00b894":card.matchScore>=70?"#f9ca24":"#4A90D9";
                 return (
                   <div key={card.id} className="inhand-listing-card" onClick={() => openListingDetail(card)} style={{ cursor: "pointer" }}>
                     <div style={{ display:"flex",gap:12,alignItems:"center" }}>

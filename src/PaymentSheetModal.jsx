@@ -40,19 +40,6 @@ export default function PaymentSheetModal({
       try {
         setLoading(true);
         setError("");
-        const shippingPayload =
-          requireShipping && ship.street && ship.city && ship.state && ship.zip
-            ? {
-                name: ship.name || "Buyer",
-                address: {
-                  line1: ship.street,
-                  city: ship.city,
-                  state: ship.state,
-                  postal_code: ship.zip,
-                  country: "US",
-                },
-              }
-            : undefined;
 
         // For purchase we create intent after address is ready (re-run when ship changes via Pay click)
         // Initial mount: create without shipping if not required; if required wait until user taps Pay

@@ -1,4 +1,9 @@
 {
+  "build": {
+    "env": {
+      "CI": "false"
+    }
+  },
   "rewrites": [
     { "source": "/auth/callback", "destination": "/index.html" },
     { "source": "/listing/:id", "destination": "/index.html" },
