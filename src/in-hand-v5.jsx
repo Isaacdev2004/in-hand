@@ -3990,6 +3990,7 @@ function AppShell({ onSignOut, authUser }) {
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [editProfileTab, setEditProfileTab] = useState("profile");
   const ratingsSectionRef = useRef(null);
+  const tradeShipBackfillRef = useRef(new Set());
   const [showPackagingGuide, setShowPackagingGuide] = useState(false);
   const [vaultFilter, setVaultFilter] = useState("all");
   const [tradesView, setTradesView] = useState("proposals");
@@ -4138,6 +4139,34 @@ function AppShell({ onSignOut, authUser }) {
     load();
     return () => { cancelled = true; };
   }, [authUser?.id]);
+
+  // Backfill Ship cards for completed trades that never got shipment rows (older accepts).
+  useEffect(() => {
+    if (!dbLoaded || !activeUserId) return undefined;
+    const completed = (db.tradeProposals || []).filter(
+      (p) => p.status === "completed" && (p.proposerId === activeUserId || p.receiverId === activeUserId)
+    );
+    let cancelled = false;
+    (async () => {
+      for (const p of completed) {
+        if (cancelled) return;
+        if (tradeShipBackfillRef.current.has(p.id)) continue;
+        const hasPair =
+          (db.shipments || []).some((s) => s.id === `sh_trade_${p.id}_a`) &&
+          (db.shipments || []).some((s) => s.id === `sh_trade_${p.id}_b`);
+        if (hasPair) {
+          tradeShipBackfillRef.current.add(p.id);
+          continue;
+        }
+        tradeShipBackfillRef.current.add(p.id);
+        await ensureTradeShipments(p, { silent: true });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run when proposals/shipments settle after load
+  }, [dbLoaded, activeUserId, db.tradeProposals, db.shipments]);
 
   // After Stripe Checkout success redirect, resync DB from Supabase (webhook writes order).
   useEffect(() => {
@@ -4463,6 +4492,129 @@ function AppShell({ onSignOut, authUser }) {
     setTradesView("proposals");
   };
 
+  const pickShipAddr = (uid) => {
+    const u = db.users.find((x) => x.id === uid);
+    const a = u?.addresses?.find((x) => x.isDefault) || u?.addresses?.[0];
+    if (!a?.street || !a?.city || !a?.state || !a?.zip) return null;
+    return {
+      name: a.name || u?.username || "",
+      street: a.street,
+      city: a.city,
+      state: a.state,
+      zip: a.zip,
+      country: "US",
+    };
+  };
+
+  /** Idempotent: create trade txn + dual Ship cards (stable ids). Backfills older completed trades. */
+  const ensureTradeShipments = async (proposal, { silent = false } = {}) => {
+    const targetCard = db.cards.find((c) => c.id === proposal.targetCardId);
+    const offeredCards = (proposal.offeredCardIds || []).map((id) => db.cards.find((c) => c.id === id)).filter(Boolean);
+    if (!targetCard || offeredCards.length === 0) {
+      if (!silent) notify("❌ Trade figures no longer available for shipping");
+      return { ok: false };
+    }
+    const tradeTxnId = `t_trade_${proposal.id}`;
+    const shipIdA = `sh_trade_${proposal.id}_a`;
+    const shipIdB = `sh_trade_${proposal.id}_b`;
+    const offerNames = offeredCards.map((c) => c.name).join(" + ");
+    const offerValue = offeredCards.reduce((s, c) => s + (c.value || 0), 0);
+    const tradeTxn = {
+      id: tradeTxnId,
+      type: "trade",
+      buyerId: proposal.proposerId,
+      sellerId: proposal.receiverId,
+      cardId: targetCard.id,
+      amount: 0,
+      fee: TRADE_FEE,
+      net: 0,
+      status: "completed",
+      method: "trade",
+      date: new Date().toISOString().split("T")[0],
+      cardName: `Trade: ${offerNames} ⇄ ${targetCard.name}`,
+      rated: false,
+    };
+    const shipA = {
+      id: shipIdA,
+      txnId: tradeTxnId,
+      trackingNumber: "",
+      carrier: "USPS Ground",
+      status: "label_pending",
+      estimatedDelivery: "",
+      shippingCost: getShippingRate(offerValue)?.price || 0,
+      shippingLabel: "",
+      fromUser: proposal.proposerId,
+      toUser: proposal.receiverId,
+      figureName: offerNames,
+      figureValue: offerValue,
+      fundsReleased: false,
+      autoReleased: false,
+      deliveredAt: null,
+      disputeFrozen: false,
+      events: [],
+      shipTo: pickShipAddr(proposal.receiverId),
+      shipFrom: pickShipAddr(proposal.proposerId),
+    };
+    const shipB = {
+      id: shipIdB,
+      txnId: tradeTxnId,
+      trackingNumber: "",
+      carrier: "USPS Ground",
+      status: "label_pending",
+      estimatedDelivery: "",
+      shippingCost: getShippingRate(targetCard.value)?.price || 0,
+      shippingLabel: "",
+      fromUser: proposal.receiverId,
+      toUser: proposal.proposerId,
+      figureName: targetCard.name,
+      figureValue: targetCard.value,
+      fundsReleased: false,
+      autoReleased: false,
+      deliveredAt: null,
+      disputeFrozen: false,
+      events: [],
+      shipTo: pickShipAddr(proposal.proposerId),
+      shipFrom: pickShipAddr(proposal.receiverId),
+    };
+    const tradeShips = [shipA, shipB];
+
+    if (supabase) {
+      const { error: txnErr } = await upsertTransaction(tradeTxn);
+      if (txnErr) {
+        console.error("In Hand: trade txn upsert failed", txnErr);
+        if (!silent) notify(`❌ Could not save trade record: ${txnErr.message || "db error"}`);
+        return { ok: false, error: txnErr };
+      }
+      for (const s of tradeShips) {
+        const { error: shErr } = await upsertShipment(s);
+        if (shErr) {
+          console.error("In Hand: trade shipment upsert failed", shErr);
+          if (!silent) notify(`❌ Could not create Ship cards: ${shErr.message || "db error"}`);
+          return { ok: false, error: shErr };
+        }
+      }
+    }
+
+    setDb((d) => {
+      const withoutTxn = (d.transactions || []).filter((t) => t.id !== tradeTxnId);
+      const withoutShips = (d.shipments || []).filter((s) => s.id !== shipIdA && s.id !== shipIdB);
+      return {
+        ...d,
+        transactions: [tradeTxn, ...withoutTxn],
+        shipments: [...tradeShips, ...withoutShips],
+      };
+    });
+    return { ok: true, ships: tradeShips, tradeTxn };
+  };
+
+  const openTradeShipping = async (proposal) => {
+    const result = await ensureTradeShipments(proposal);
+    setTab("shipping");
+    if (result.ok) {
+      notify("📦 Shipment card ready — tap Generate Shipping Label");
+    }
+  };
+
   const executeTradeSwap = async (proposal) => {
     const targetCard = db.cards.find((c) => c.id === proposal.targetCardId);
     const offeredCards = proposal.offeredCardIds.map((id) => db.cards.find((c) => c.id === id)).filter(Boolean);
@@ -4478,8 +4630,6 @@ function AppShell({ onSignOut, authUser }) {
     if (topup > 0 && iOwe) {
       txns.push({ id: "t" + Date.now() + "u", type: "topup", buyerId: proposal.proposerId, sellerId: proposal.receiverId, cardId: targetCard.id, amount: topup, fee: topupFee, net: topup - topupFee, status: "in_escrow", method: "escrow", date: new Date().toISOString().split("T")[0], cardName: `Top-up: ${offeredCards.map((c) => c.name).join(" + ")} ⇄ ${targetCard.name}` });
     }
-    const offerLabel = offeredCards.map((c) => c.name).join(" + ");
-    txns.push({ id: "t" + Date.now() + "t", type: "trade", buyerId: proposal.proposerId, sellerId: proposal.receiverId, cardId: targetCard.id, amount: 0, fee: TRADE_FEE, net: 0, status: "completed", method: "trade", date: new Date().toISOString().split("T")[0], cardName: `Trade: ${offerLabel} ⇄ ${targetCard.name}` });
 
     if (supabase) {
       const { data: swapResult, error: swapErr } = await executeTradeProposal(proposal.id);
@@ -4503,69 +4653,12 @@ function AppShell({ onSignOut, authUser }) {
       }
     }
 
-    // Dual shipments: each party ships the figure(s) they're sending
-    const tradeTxn = txns.find((t) => t.type === "trade") || txns[txns.length - 1];
-    const offerNames = offeredCards.map((c) => c.name).join(" + ");
-    const offerValue = offeredCards.reduce((s, c) => s + (c.value || 0), 0);
-    const pickShipAddr = (uid) => {
-      const u = db.users.find((x) => x.id === uid);
-      const a = u?.addresses?.find((x) => x.isDefault) || u?.addresses?.[0];
-      if (!a?.street || !a?.city || !a?.state || !a?.zip) return null;
-      return {
-        name: a.name || u?.username || "",
-        street: a.street,
-        city: a.city,
-        state: a.state,
-        zip: a.zip,
-        country: "US",
-      };
-    };
-    const shipA = {
-      id: `sh_trade_${proposal.id}_a`,
-      txnId: tradeTxn.id,
-      trackingNumber: "",
-      carrier: "USPS Ground",
-      status: "label_pending",
-      estimatedDelivery: "",
-      shippingCost: getShippingRate(offerValue)?.price || 0,
-      shippingLabel: "",
-      fromUser: proposal.proposerId,
-      toUser: proposal.receiverId,
-      figureName: offerNames,
-      figureValue: offerValue,
-      fundsReleased: false,
-      autoReleased: false,
-      deliveredAt: null,
-      disputeFrozen: false,
-      events: [],
-      shipTo: pickShipAddr(proposal.receiverId),
-    };
-    const shipB = {
-      id: `sh_trade_${proposal.id}_b`,
-      txnId: tradeTxn.id,
-      trackingNumber: "",
-      carrier: "USPS Ground",
-      status: "label_pending",
-      estimatedDelivery: "",
-      shippingCost: getShippingRate(targetCard.value)?.price || 0,
-      shippingLabel: "",
-      fromUser: proposal.receiverId,
-      toUser: proposal.proposerId,
-      figureName: targetCard.name,
-      figureValue: targetCard.value,
-      fundsReleased: false,
-      autoReleased: false,
-      deliveredAt: null,
-      disputeFrozen: false,
-      events: [],
-      shipTo: pickShipAddr(proposal.proposerId),
-    };
-    const tradeShips = [shipA, shipB];
+    const shipResult = await ensureTradeShipments(proposal, { silent: false });
+    if (!shipResult.ok) {
+      notify("⚠️ Trade swapped, but Ship cards failed — tap Open Ship on the trade to retry");
+    }
+
     if (supabase) {
-      for (const s of tradeShips) {
-        const { error: shErr } = await upsertShipment(s);
-        if (shErr) console.error("In Hand: trade shipment insert failed", shErr);
-      }
       const nBase = Date.now();
       for (const uid of [proposal.proposerId, proposal.receiverId]) {
         await insertNotification({
@@ -4600,11 +4693,17 @@ function AppShell({ onSignOut, authUser }) {
           link: "shipping",
           userId: uid === proposal.proposerId ? proposal.receiverId : proposal.proposerId,
         }));
+      const tradeTxn = shipResult.tradeTxn;
+      const mergedTxns = tradeTxn
+        ? [tradeTxn, ...txns.filter((t) => t.id !== tradeTxn.id), ...(d.transactions || []).filter((t) => t.id !== tradeTxn.id && !txns.some((x) => x.id === t.id))]
+        : [...txns, ...(d.transactions || [])];
+      const tradeShips = shipResult.ships || [];
+      const shipIds = new Set(tradeShips.map((s) => s.id));
       return {
         ...d,
         cards: newCards,
-        transactions: [...txns, ...d.transactions],
-        shipments: [...tradeShips, ...(d.shipments || [])],
+        transactions: mergedTxns,
+        shipments: [...tradeShips, ...(d.shipments || []).filter((s) => !shipIds.has(s.id))],
         notifications: [...localNotifs, ...(d.notifications || [])],
         tradeProposals: (d.tradeProposals || []).map((p) => (p.id === proposal.id ? { ...p, status: "completed", topupAgreed: topup, topupStatus: topup > 0 ? "accepted" : p.topupStatus } : p)),
       };
@@ -5518,8 +5617,10 @@ function AppShell({ onSignOut, authUser }) {
               setTab("shipping");
             } else if (mode === "trade_fee") {
               notify("✅ Trade fee paid — next: generate your shipping label");
+              const proposal = tradeGuide?.proposal;
               setTradeGuide(null);
-              setTab("shipping");
+              if (proposal) openTradeShipping(proposal);
+              else setTab("shipping");
             } else {
               notify("✅ Payment complete");
             }
@@ -5547,8 +5648,7 @@ function AppShell({ onSignOut, authUser }) {
           }}
           onGoShip={() => {
             setTradeGuide(null);
-            setTab("shipping");
-            notify("Generate your label on the shipment card below");
+            openTradeShipping(tradeGuide.proposal);
           }}
           onClose={() => setTradeGuide(null)}
         />
@@ -6136,15 +6236,19 @@ function AppShell({ onSignOut, authUser }) {
                     )}
                     {isDone && (() => {
                       const myOutbound = (db.shipments || []).find(
+                        (s) => s.id === `sh_trade_${proposal.id}_${proposal.proposerId === activeUserId ? "a" : "b"}`
+                      ) || (db.shipments || []).find(
                         (s) => s.txnId && (db.transactions || []).some((t) => t.id === s.txnId && t.type === "trade" && t.cardName?.includes(targetCard.name)) && s.fromUser === activeUserId
                       ) || (db.shipments || []).find((s) => s.fromUser === activeUserId && !s.trackingNumber && (s.figureName === targetCard.name || (offeredCards.some((c) => s.figureName?.includes(c.name)))));
-                      const needsLabel = myOutbound && !myOutbound.trackingNumber;
+                      const needsLabel = !myOutbound || !myOutbound.trackingNumber;
                       return (
                         <div style={{ display:"flex",flexDirection:"column",gap:8 }}>
-                          <div style={{ textAlign:"center",fontSize:11,color:"#00b894",fontWeight:700 }}>🤝 Trade accepted — time to ship</div>
+                          <div style={{ textAlign:"center",fontSize:11,color:"#00b894",fontWeight:700 }}>
+                            {needsLabel ? "🤝 Trade accepted — time to ship" : "✅ Label created — ship when ready"}
+                          </div>
                           {needsLabel ? (
-                            <button type="button" onClick={()=>{ setTab("shipping"); notify("Open your shipment card below to Generate Label"); }} style={{ width:"100%",background:"linear-gradient(135deg,#2C3E50,#2d3561)",border:"none",borderRadius:12,padding:"12px",fontWeight:800,fontSize:13,color:"#fff",cursor:"pointer" }}>
-                              🏷️ Generate Shipping Label
+                            <button type="button" onClick={()=>openTradeShipping(proposal)} style={{ width:"100%",background:"linear-gradient(135deg,#2C3E50,#2d3561)",border:"none",borderRadius:12,padding:"12px",fontWeight:800,fontSize:13,color:"#fff",cursor:"pointer" }}>
+                              {myOutbound ? "🏷️ Generate Shipping Label" : "📦 Set up shipping labels"}
                             </button>
                           ) : (
                             <button type="button" onClick={()=>setTab("shipping")} style={{ width:"100%",background:"#EAF1FA",border:"none",borderRadius:12,padding:"11px",fontWeight:700,fontSize:12,color:"#3A7BD5",cursor:"pointer" }}>
