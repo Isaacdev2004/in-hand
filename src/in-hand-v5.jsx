@@ -1679,10 +1679,17 @@ function LabelModal({ shipment, rate, seller, buyer, sellerAddresses, onGenerate
     setStep("generating");
     try {
       if (supabase) {
+        let sellerEmail = "";
+        try {
+          const { data: sess } = await supabase.auth.getSession();
+          sellerEmail = sess?.session?.user?.email || "";
+        } catch {
+          /* ignore */
+        }
         const result = await createShippingLabel({
           shipmentId: shipment.id,
-          fromAddress: fromAddr,
-          toAddress: toAddrForm,
+          fromAddress: { ...fromAddr, email: fromAddr.email || sellerEmail || undefined },
+          toAddress: { ...toAddrForm, email: toAddrForm.email || buyer?.email || undefined },
         });
         setGeneratedTN(result.trackingNumber || "");
         setLabelUrl(result.labelUrl || "");
@@ -1741,8 +1748,8 @@ function LabelModal({ shipment, rate, seller, buyer, sellerAddresses, onGenerate
         </div>
       </div>
     )}
-    <div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:800,display:"flex",alignItems:"flex-end",justifyContent:"center" }}>
-      <div style={{ background:"#fff",borderRadius:"28px 28px 0 0",padding:"24px 20px 40px",width:"100%",maxWidth:430,maxHeight:"90vh",overflowY:"auto" }}>
+    <div className="inhand-sheet-backdrop" style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:800,display:"flex",alignItems:"flex-end",justifyContent:"center" }}>
+      <div className="inhand-sheet" style={{ background:"#fff",borderRadius:"28px 28px 0 0",padding:"24px 20px 40px",width:"100%",maxWidth:430,maxHeight:"90vh",overflowY:"auto" }}>
 
         <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20 }}>
           <div>
@@ -2002,8 +2009,8 @@ function AddressModal({ addresses, onSave, onClose }) {
   const LABELS = ["Home", "Work", "Storage", "Other"];
 
   return (
-    <div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:600,display:"flex",alignItems:"flex-end",justifyContent:"center" }}>
-      <div style={{ background:"#fff",borderRadius:"28px 28px 0 0",padding:"24px 20px 44px",width:"100%",maxWidth:430,maxHeight:"85vh",overflowY:"auto" }}>
+    <div className="inhand-sheet-backdrop" style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:600,display:"flex",alignItems:"flex-end",justifyContent:"center" }}>
+      <div className="inhand-sheet" style={{ background:"#fff",borderRadius:"28px 28px 0 0",padding:"24px 20px 44px",width:"100%",maxWidth:430,maxHeight:"85vh",overflowY:"auto" }}>
 
         {/* Header */}
         <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20 }}>
@@ -3412,8 +3419,8 @@ function EditProfileModal({ user, initialTab = "profile", onSave, onExportData, 
   ];
 
   return (
-    <div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:700,display:"flex",alignItems:"flex-end",justifyContent:"center" }}>
-      <div style={{ background:"#fff",borderRadius:"28px 28px 0 0",padding:"24px 20px 44px",width:"100%",maxWidth:430,maxHeight:"90vh",overflowY:"auto" }}>
+    <div className="inhand-sheet-backdrop" style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:700,display:"flex",alignItems:"flex-end",justifyContent:"center" }}>
+      <div className="inhand-sheet" style={{ background:"#fff",borderRadius:"28px 28px 0 0",padding:"24px 20px 44px",width:"100%",maxWidth:430,maxHeight:"90vh",overflowY:"auto" }}>
 
         {/* Header */}
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:20 }}>

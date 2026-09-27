@@ -92,6 +92,25 @@ Deno.serve(async (req) => {
       }, 400);
     }
 
+    // Shippo requires non-empty email on address_from (and prefers it on address_to).
+    const sellerEmail =
+      String(fromAddress?.email || "").trim() ||
+      String(user.email || "").trim() ||
+      `seller+${user.id.slice(0, 8)}@inhand.app`;
+
+    let buyerEmail = String(toAddress?.email || toAddr.email || "").trim();
+    if (!buyerEmail) {
+      try {
+        const { data: buyerAuth } = await supabase.auth.admin.getUserById(shipment.to_user);
+        buyerEmail = String(buyerAuth?.user?.email || "").trim();
+      } catch {
+        /* optional */
+      }
+    }
+    if (!buyerEmail) {
+      buyerEmail = `buyer+${shipment.to_user.slice(0, 8)}@inhand.app`;
+    }
+
     const from: ShippoAddress = {
       name: fromAddress.name || "Seller",
       street1: fromAddress.street,
@@ -99,7 +118,13 @@ Deno.serve(async (req) => {
       state: fromAddress.state,
       zip: fromAddress.zip,
       country: "US",
+      email: sellerEmail,
+      phone: String(fromAddress?.phone || "").trim() || undefined,
     };
+    toAddr.email = buyerEmail;
+    if (!toAddr.phone && toAddress?.phone) {
+      toAddr.phone = String(toAddress.phone).trim();
+    }
 
     const figureValue = Number(shipment.figure_value) || 50;
     const rates = await loadShippingRatesFromDb(supabase);

@@ -107,7 +107,7 @@ export default function ShipTab({
   };
 
   const handleGenerate = async (s) => {
-    const { shipTo, shipFrom } = resolveParty(s);
+    const { shipTo, shipFrom, buyer } = resolveParty(s);
     if (!shipFrom) {
       onNotify?.("❌ Add your return address first (Account → Shipping Addresses)");
       onOpenAddresses?.();
@@ -123,10 +123,23 @@ export default function ShipTab({
     }
     setBusyId(s.id);
     try {
+      let sellerEmail = "";
+      try {
+        const { data: sess } = await supabase.auth.getSession();
+        sellerEmail = sess?.session?.user?.email || "";
+      } catch {
+        /* ignore */
+      }
       const result = await createShippingLabel({
         shipmentId: s.id,
-        fromAddress: shipFrom,
-        toAddress: shipTo,
+        fromAddress: {
+          ...shipFrom,
+          email: shipFrom.email || sellerEmail || undefined,
+        },
+        toAddress: {
+          ...shipTo,
+          email: shipTo.email || buyer?.email || undefined,
+        },
       });
       await onLabelCreated?.(s, result.trackingNumber, {
         labelUrl: result.labelUrl,

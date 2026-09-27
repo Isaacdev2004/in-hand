@@ -7,6 +7,8 @@ export type ShippoAddress = {
   state: string;
   zip: string;
   country?: string;
+  email?: string;
+  phone?: string;
 };
 
 export function parcelForFigureValue(value: number, rates?: ShippingRate[]) {
@@ -48,6 +50,8 @@ export function storedAddressFromRecord(addr: Record<string, unknown> | null | u
   const state = String(addr.state || "").trim();
   const zip = String(addr.zip || addr.postal_code || "").trim();
   if (!street || !city || !state || !zip) return null;
+  const email = String(addr.email || "").trim();
+  const phone = String(addr.phone || "").trim();
   return {
     name: String(addr.name || "Recipient").trim() || "Recipient",
     street1: street,
@@ -55,6 +59,8 @@ export function storedAddressFromRecord(addr: Record<string, unknown> | null | u
     state,
     zip,
     country: String(addr.country || "US").trim() || "US",
+    ...(email ? { email } : {}),
+    ...(phone ? { phone } : {}),
   };
 }
 

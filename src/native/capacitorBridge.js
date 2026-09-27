@@ -104,7 +104,7 @@ export async function initCapacitor() {
       document.documentElement.style.setProperty("--ih-keyboard-height", `${h}px`);
       window.dispatchEvent(new CustomEvent("inhand:keyboard-show", { detail: { height: h } }));
       // Keep focused field above the keyboard
-      requestAnimationFrame(() => {
+      const scrollFocused = () => {
         const el = document.activeElement;
         if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) {
           try {
@@ -113,7 +113,9 @@ export async function initCapacitor() {
             /* ignore */
           }
         }
-      });
+      };
+      requestAnimationFrame(scrollFocused);
+      setTimeout(scrollFocused, 280);
     });
     Keyboard.addListener("keyboardWillHide", () => {
       document.documentElement.classList.remove("keyboard-open");
@@ -138,6 +140,13 @@ export async function initCapacitor() {
           /* ignore */
         }
       }, 120);
+      setTimeout(() => {
+        try {
+          t.scrollIntoView({ block: "center", behavior: "smooth" });
+        } catch {
+          /* ignore */
+        }
+      }, 320);
     },
     true
   );

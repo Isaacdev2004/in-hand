@@ -962,6 +962,22 @@ html.capacitor-native.keyboard-open .inhand-auth-screen {
   padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px) + var(--ih-keyboard-height, 0px));
 }
 
+/* Bottom sheets (addresses, labels, profile) — keep fields above keyboard */
+.inhand-sheet-backdrop {
+  align-items: flex-end !important;
+}
+
+.inhand-sheet {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  scroll-padding-bottom: 120px;
+}
+
+html.capacitor-native.keyboard-open .inhand-sheet {
+  max-height: calc(100dvh - var(--ih-keyboard-height, 0px) - 8px) !important;
+  padding-bottom: calc(28px + env(safe-area-inset-bottom, 0px) + var(--ih-keyboard-height, 0px)) !important;
+}
+
 .inhand-vault-card {
   background: #fff;
   border-radius: 22px;
