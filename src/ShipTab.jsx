@@ -32,6 +32,14 @@ function isHttpImageUrl(value) {
   return /^https?:\/\//i.test(v) || v.startsWith("data:image") || /supabase\.co\/storage/i.test(v);
 }
 
+function isTradeFeePaid(shipment) {
+  if (!shipment) return false;
+  if (shipment.tradeFeePaid) return true;
+  return (shipment.events || []).some(
+    (e) => typeof e?.description === "string" && /trade fee paid/i.test(e.description),
+  );
+}
+
 function ShipThumb({ card, size = 44 }) {
   const src = card?.photos?.[0] || (isHttpImageUrl(card?.image) ? card.image : null);
   if (src) {
@@ -63,8 +71,9 @@ function ShipThumb({ card, size = 44 }) {
 }
 
 /**
- * Simplified Ship tab — one card per outbound shipment, two actions:
- * Generate Label + Forward Label via Email.
+ * Simplified Ship tab — one card per outbound shipment.
+ * Trades: Pay $2 trade fee (Stripe Payment Sheet) → then Shippo label.
+ * Sales: label covered from checkout escrow → generate directly.
  */
 export default function ShipTab({
   shipments,
@@ -73,12 +82,14 @@ export default function ShipTab({
   activeUserId,
   getUser,
   fmt,
+  tradeFee = 2,
   onLabelCreated,
   onMarkShipped,
   onTrack,
   onOpenMessages,
   onNotify,
   onOpenAddresses,
+  onRequestTradeFeePayment,
 }) {
   const [busyId, setBusyId] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
@@ -95,7 +106,7 @@ export default function ShipTab({
 
   const resolveParty = (s) => {
     const txn = (transactions || []).find((t) => t.id === s.txnId);
-    const isTrade = txn?.type === "trade";
+    const isTrade = txn?.type === "trade" || String(s.id || "").startsWith("sh_trade_");
     const buyer = getUser(s.toUser);
     const seller = getUser(s.fromUser);
     const shipTo = normalizeAddr(s.shipTo, buyer?.username) || pickUserAddress(buyer);
@@ -106,8 +117,34 @@ export default function ShipTab({
     return { txn, isTrade, buyer, seller, shipTo, shipFrom, rate, card, other };
   };
 
+  const runShippoGenerate = async (s, shipFrom, shipTo, buyer) => {
+    let sellerEmail = "";
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      sellerEmail = sess?.session?.user?.email || "";
+    } catch {
+      /* ignore */
+    }
+    const result = await createShippingLabel({
+      shipmentId: s.id,
+      fromAddress: {
+        ...shipFrom,
+        email: shipFrom.email || sellerEmail || undefined,
+      },
+      toAddress: {
+        ...shipTo,
+        email: shipTo.email || buyer?.email || undefined,
+      },
+    });
+    await onLabelCreated?.(s, result.trackingNumber, {
+      labelUrl: result.labelUrl,
+      carrier: result.carrier || "USPS",
+    });
+    onNotify?.("✅ Label ready — use Forward Label to email the PDF");
+  };
+
   const handleGenerate = async (s) => {
-    const { shipTo, shipFrom, buyer } = resolveParty(s);
+    const { shipTo, shipFrom, buyer, isTrade } = resolveParty(s);
     if (!shipFrom) {
       onNotify?.("❌ Add your return address first (Account → Shipping Addresses)");
       onOpenAddresses?.();
@@ -121,31 +158,16 @@ export default function ShipTab({
       onNotify?.("❌ Shipping labels require Supabase / Shippo");
       return;
     }
+
+    // Trades: each party pays $2 via Stripe Payment Sheet before Shippo runs
+    if (isTrade && !isTradeFeePaid(s)) {
+      onRequestTradeFeePayment?.(s, { shipFrom, shipTo, buyer });
+      return;
+    }
+
     setBusyId(s.id);
     try {
-      let sellerEmail = "";
-      try {
-        const { data: sess } = await supabase.auth.getSession();
-        sellerEmail = sess?.session?.user?.email || "";
-      } catch {
-        /* ignore */
-      }
-      const result = await createShippingLabel({
-        shipmentId: s.id,
-        fromAddress: {
-          ...shipFrom,
-          email: shipFrom.email || sellerEmail || undefined,
-        },
-        toAddress: {
-          ...shipTo,
-          email: shipTo.email || buyer?.email || undefined,
-        },
-      });
-      await onLabelCreated?.(s, result.trackingNumber, {
-        labelUrl: result.labelUrl,
-        carrier: result.carrier || "USPS",
-      });
-      onNotify?.("✅ Label ready — use Forward Label to email the PDF");
+      await runShippoGenerate(s, shipFrom, shipTo, buyer);
     } catch (err) {
       console.error("In Hand: quick label failed", err);
       onNotify?.(`❌ ${err?.message || "Could not generate label"}`);
@@ -189,6 +211,7 @@ export default function ShipTab({
   const renderOutboundCard = (s) => {
     const { txn, isTrade, shipTo, shipFrom, rate, card, other } = resolveParty(s);
     const needsLabel = !s.trackingNumber;
+    const feePaid = isTradeFeePaid(s);
     const canMarkShipped = !!s.trackingNumber && (s.status === "accepted" || s.status === "label_created");
     const expanded = expandedId === s.id;
     const busy = busyId === s.id;
@@ -196,6 +219,10 @@ export default function ShipTab({
     const subline = isTrade
       ? `Trade with ${other?.username || "collector"} · $${fmt(s.figureValue)}`
       : `Sale to ${other?.username || "buyer"} · $${fmt(s.figureValue)}`;
+
+    const generateLabel = isTrade && !feePaid
+      ? `💳  Pay $${fmt(tradeFee)} & Generate Label`
+      : "🏷️  Generate Shipping Label";
 
     return (
       <div
@@ -242,6 +269,25 @@ export default function ShipTab({
         </div>
 
         <div style={{ padding: "16px" }}>
+          {isTrade && needsLabel && (
+            <div
+              style={{
+                background: feePaid ? "#f0fff8" : "#fff8e6",
+                border: `1px solid ${feePaid ? "#00b89433" : "#f0932b44"}`,
+                borderRadius: 12,
+                padding: "10px 12px",
+                marginBottom: 12,
+                fontSize: 12,
+                color: "#555",
+                lineHeight: 1.45,
+              }}
+            >
+              {feePaid
+                ? "✅ Trade fee paid — tap Generate Label to create your USPS label."
+                : `Each trader pays a $${fmt(tradeFee)} fee. Tap below to pay with Stripe (Apple Pay / card), then your label is created automatically.`}
+            </div>
+          )}
+
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 10, fontWeight: 700, color: "#aaa", letterSpacing: 1, marginBottom: 6 }}>SHIP TO</div>
@@ -341,7 +387,7 @@ export default function ShipTab({
                   opacity: busy ? 0.75 : 1,
                 }}
               >
-                {busy ? "Generating label…" : "🏷️  Generate Shipping Label"}
+                {busy ? "Working…" : generateLabel}
               </button>
             )}
             <button
@@ -421,7 +467,9 @@ export default function ShipTab({
           </div>
 
           <div style={{ marginTop: 12, textAlign: "center", fontSize: 10, color: "#bbb", lineHeight: 1.4 }}>
-            Label pre-filled with buyer and seller addresses from your transaction.
+            {isTrade
+              ? `Trade fee $${fmt(tradeFee)} per party · then USPS label via Shippo`
+              : "Sale labels covered from checkout escrow · Shippo + USPS"}
             {txn ? ` · ${txn.type}` : ""}
           </div>
         </div>
@@ -433,7 +481,7 @@ export default function ShipTab({
     <div style={{ flex: 1, overflowY: "auto", padding: "20px 20px 90px" }}>
       <div style={{ fontWeight: 800, fontSize: 18, color: "#2C3E50", marginBottom: 4 }}>Ship</div>
       <div style={{ fontSize: 12, color: "#888", marginBottom: 16, lineHeight: 1.45 }}>
-        All shipments via USPS Ground Advantage. Labels are purchased for you — no rate picking.
+        Trades: pay your ${fmt(tradeFee)} fee, then we generate your USPS label. Sales: labels use prepaid shipping from checkout.
       </div>
 
       {outbound.length === 0 ? (

@@ -58,6 +58,37 @@ Deno.serve(async (req) => {
       const pi = event.data.object as Stripe.PaymentIntent;
       const md = pi.metadata || {};
       if (md.purpose === "trade_fee") {
+        const shipmentId = md.shipment_id;
+        if (shipmentId) {
+          const { data: sh } = await supabase
+            .from("shipments")
+            .select("id, events")
+            .eq("id", shipmentId)
+            .maybeSingle();
+          if (sh) {
+            const events = Array.isArray(sh.events) ? [...sh.events] : [];
+            const already = events.some(
+              (e: { description?: string }) =>
+                typeof e?.description === "string" &&
+                /trade fee paid/i.test(e.description),
+            );
+            if (!already) {
+              events.push({
+                date: new Date().toISOString().slice(0, 16).replace("T", " "),
+                location: "Billing",
+                description: "Trade fee paid",
+                paymentIntentId: pi.id,
+              });
+              await supabase
+                .from("shipments")
+                .update({
+                  events,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq("id", shipmentId);
+            }
+          }
+        }
         await supabase.from("stripe_events").insert({ id: event.id });
         return json({ received: true, trade_fee: true });
       }

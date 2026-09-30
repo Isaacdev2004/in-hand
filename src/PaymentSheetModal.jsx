@@ -190,7 +190,7 @@ export default function PaymentSheetModal({
     border: "1px solid #d8e0ea",
     borderRadius: 12,
     padding: "11px 12px",
-    fontSize: 14,
+    fontSize: 16,
     width: "100%",
     outline: "none",
     boxSizing: "border-box",

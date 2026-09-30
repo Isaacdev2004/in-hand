@@ -54,6 +54,18 @@ Deno.serve(async (req) => {
       ...(body.metadata || {}),
     };
 
+    // Trade fee: flat $2.00 per party — never trust client amount
+    if (purpose === "trade_fee") {
+      amountCents = 200;
+      metadata.purpose = "trade_fee";
+      if (body.metadata?.shipment_id) {
+        metadata.shipment_id = String(body.metadata.shipment_id);
+      }
+      if (body.shipmentId) {
+        metadata.shipment_id = String(body.shipmentId);
+      }
+    }
+
     // Purchase: compute totals from listing (never trust client amount)
     if (purpose === "purchase" && body.listingId) {
       const { data: listing, error: listErr } = await supabase

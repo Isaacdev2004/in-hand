@@ -978,6 +978,13 @@ html.capacitor-native.keyboard-open .inhand-sheet {
   padding-bottom: calc(28px + env(safe-area-inset-bottom, 0px) + var(--ih-keyboard-height, 0px)) !important;
 }
 
+/* iOS Safari zooms inputs under 16px — keep listing / address forms steady */
+html.capacitor-native input,
+html.capacitor-native select,
+html.capacitor-native textarea {
+  font-size: 16px !important;
+}
+
 .inhand-vault-card {
   background: #fff;
   border-radius: 22px;

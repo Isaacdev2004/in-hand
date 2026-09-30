@@ -73,6 +73,13 @@ function txnFromRow(r) {
 
 function shipmentFromRow(r) {
   if (!r) return r;
+  const events = r.events || [];
+  const tradeFeePaid =
+    !!r.trade_fee_paid ||
+    (Array.isArray(events) &&
+      events.some(
+        (e) => typeof e?.description === "string" && /trade fee paid/i.test(e.description),
+      ));
   return {
     id: r.id,
     txnId: r.txn_id,
@@ -90,9 +97,10 @@ function shipmentFromRow(r) {
     autoReleased: r.auto_released,
     deliveredAt: r.delivered_at,
     disputeFrozen: r.dispute_frozen,
-    events: r.events || [],
+    events,
     shipTo: r.ship_to || null,
     shipFrom: r.ship_from || null,
+    tradeFeePaid,
   };
 }
 

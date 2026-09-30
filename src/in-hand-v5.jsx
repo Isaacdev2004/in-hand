@@ -510,7 +510,7 @@ function CyclingSubtitle() {
 }
 
 // ─── SHARED STYLES ────────────────────────────────────────────────────────────
-const IS = { background:"#fff", border:"1px solid #d8e0ea", borderRadius:14, padding:"12px 14px", fontSize:14, fontFamily:UI_FONT, fontWeight:500, color:"#15202b", width:"100%", minWidth:0, maxWidth:"100%", outline:"none", boxSizing:"border-box" };
+const IS = { background:"#fff", border:"1px solid #d8e0ea", borderRadius:14, padding:"12px 14px", fontSize:16, fontFamily:UI_FONT, fontWeight:500, color:"#15202b", width:"100%", minWidth:0, maxWidth:"100%", outline:"none", boxSizing:"border-box" };
 const TS = (on) => ({ flex:1, background:on?"#2C3E50":"#E4EBF2", border:"none", borderRadius:10, padding:"9px", textAlign:"center", fontSize:12, fontWeight:700, color:on?"#fff":"#aaa", cursor:"pointer", transition:"all 0.15s" });
 const Btn = ({ children, onClick, style = {}, type = "button", disabled }) => <button type={type} onClick={onClick} disabled={disabled} style={{ border:"none", borderRadius:12, padding:"12px", fontWeight:700, fontSize:14, cursor:disabled?"not-allowed":"pointer", fontFamily:UI_FONT, ...style }}>{children}</button>;
 
@@ -5184,10 +5184,50 @@ function AppShell({ onSignOut, authUser }) {
     }
     setDb((d) => ({
       ...d,
-      shipments: d.shipments.map((s) => (s.id === shipment.id ? { ...s, ...patch } : s)),
+      shipments: d.shipments.map((s) => (s.id === shipment.id ? { ...s, ...patch, tradeFeePaid: !!s.tradeFeePaid } : s)),
     }));
     setAddTrackingFor(null);
     notify("🏷️ Label created — ready to drop off");
+  };
+
+  const markShipmentTradeFeePaid = async (shipment, paymentIntentId) => {
+    const feeEvent = {
+      date: new Date().toISOString().slice(0, 16).replace("T", " "),
+      location: "Billing",
+      description: "Trade fee paid",
+      paymentIntentId: paymentIntentId || "",
+    };
+    const events = [...(shipment.events || []).filter((e) => !/trade fee paid/i.test(e?.description || "")), feeEvent];
+    if (supabase) {
+      const { error } = await updateShipmentById(shipment.id, { events });
+      if (error) console.error("In Hand: trade fee mark failed", error);
+    }
+    const next = { ...shipment, events, tradeFeePaid: true };
+    setDb((d) => ({
+      ...d,
+      shipments: (d.shipments || []).map((s) => (s.id === shipment.id ? next : s)),
+    }));
+    return next;
+  };
+
+  const generateLabelAfterFee = async (shipment, { shipFrom, shipTo, buyer } = {}) => {
+    if (!supabase) throw new Error("Supabase required");
+    let sellerEmail = "";
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      sellerEmail = sess?.session?.user?.email || "";
+    } catch {
+      /* ignore */
+    }
+    const result = await createShippingLabel({
+      shipmentId: shipment.id,
+      fromAddress: { ...shipFrom, email: shipFrom?.email || sellerEmail || undefined },
+      toAddress: { ...shipTo, email: shipTo?.email || buyer?.email || undefined },
+    });
+    await handleLabelCreated(shipment, result.trackingNumber, {
+      labelUrl: result.labelUrl,
+      carrier: result.carrier || "USPS",
+    });
   };
 
   const handleMarkShipped = async (shipment) => {
@@ -5606,22 +5646,46 @@ function AppShell({ onSignOut, authUser }) {
       {checkoutCard && <CheckoutModal card={checkoutCard} seller={getUser(checkoutCard.ownerId)} onPayWithCard={()=>handlePurchaseWithCard(checkoutCard)} onClose={()=>setCheckoutCard(null)} />}
       {paymentSheet && (
         <PaymentSheetModal
-          title={paymentSheet.mode === "trade_fee" ? "Pay trade fee" : "Pay with card"}
-          subtitle="Secure Stripe Payment Sheet — Apple Pay / cards. We never store card numbers."
+          title={
+            paymentSheet.mode === "label_trade_fee" || paymentSheet.mode === "trade_fee"
+              ? "Pay $2 trade fee"
+              : "Pay with card"
+          }
+          subtitle={
+            paymentSheet.mode === "label_trade_fee"
+              ? "Pay your trade fee — then we create your USPS label automatically. Apple Pay / cards via Stripe."
+              : "Secure Stripe Payment Sheet — Apple Pay / cards. We never store card numbers."
+          }
           amountCents={paymentSheet.amountCents}
           amountLabel={paymentSheet.amountLabel}
-          purpose={paymentSheet.mode === "trade_fee" ? "trade_fee" : "purchase"}
+          purpose={paymentSheet.mode === "purchase" ? "purchase" : "trade_fee"}
           listingId={paymentSheet.listingId}
           requireShipping={!!paymentSheet.requireShipping}
           defaultShipping={paymentSheet.defaultShipping}
           metadata={paymentSheet.metadata || {}}
-          onSuccess={async () => {
+          onSuccess={async (paymentIntent) => {
             const mode = paymentSheet.mode;
+            const pending = paymentSheet.pendingLabel;
             setPaymentSheet(null);
             if (mode === "purchase") {
               notify("✅ Payment submitted — order appears after Stripe confirms");
               setTimeout(() => { if (supabase) reloadFromSupabase?.(); }, 2500);
               setTab("shipping");
+            } else if (mode === "label_trade_fee") {
+              if (!pending?.shipment) {
+                notify("✅ Trade fee paid — open Ship to generate your label");
+                setTab("shipping");
+                return;
+              }
+              notify("✅ Fee paid — creating your USPS label…");
+              try {
+                await markShipmentTradeFeePaid(pending.shipment, paymentIntent?.id);
+                await generateLabelAfterFee(pending.shipment, pending);
+              } catch (err) {
+                console.error("In Hand: post-fee label failed", err);
+                notify(`❌ Fee paid, but label failed: ${err?.message || "try Generate Label again"}`);
+                setTab("shipping");
+              }
             } else if (mode === "trade_fee") {
               notify("✅ Trade fee paid — next: generate your shipping label");
               const proposal = tradeGuide?.proposal;
@@ -6035,12 +6099,26 @@ function AppShell({ onSignOut, authUser }) {
           activeUserId={activeUserId}
           getUser={getUser}
           fmt={fmt}
+          tradeFee={TRADE_FEE}
           onLabelCreated={handleLabelCreated}
           onMarkShipped={handleMarkShipped}
           onTrack={(s) => setTrackingModal(s)}
           onOpenMessages={(otherId, card) => openThread(otherId, card)}
           onNotify={notify}
           onOpenAddresses={() => setShowAddressModal(true)}
+          onRequestTradeFeePayment={(shipment, addrs) => {
+            setPaymentSheet({
+              mode: "label_trade_fee",
+              amountCents: Math.round(TRADE_FEE * 100),
+              amountLabel: `$${fmt(TRADE_FEE)}`,
+              requireShipping: false,
+              metadata: {
+                purpose: "trade_fee",
+                shipment_id: shipment.id,
+              },
+              pendingLabel: { shipment, ...addrs },
+            });
+          }}
         />
       )}
 
