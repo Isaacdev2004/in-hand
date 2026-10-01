@@ -159,9 +159,12 @@ export default function ShipTab({
       return;
     }
 
-    // Trades: each party pays $2 via Stripe Payment Sheet before Shippo runs
+    // Trades: each party pays $2 + label via Stripe Payment Sheet before Shippo runs
     if (isTrade && !isTradeFeePaid(s)) {
-      onRequestTradeFeePayment?.(s, { shipFrom, shipTo, buyer });
+      const labelCost = Number(
+        (getShippingRate(s.figureValue)?.price ?? s.shippingCost) || 0,
+      );
+      onRequestTradeFeePayment?.(s, { shipFrom, shipTo, buyer, labelCost });
       return;
     }
 
@@ -221,7 +224,7 @@ export default function ShipTab({
       : `Sale to ${other?.username || "buyer"} · $${fmt(s.figureValue)}`;
 
     const generateLabel = isTrade && !feePaid
-      ? `💳  Pay $${fmt(tradeFee)} & Generate Label`
+      ? `💳  Pay $${fmt(tradeFee + Number(rate?.price || s.shippingCost || 0))} & Generate Label`
       : "🏷️  Generate Shipping Label";
 
     return (
@@ -283,8 +286,8 @@ export default function ShipTab({
               }}
             >
               {feePaid
-                ? "✅ Trade fee paid — tap Generate Label to create your USPS label."
-                : `Each trader pays a $${fmt(tradeFee)} fee. Tap below to pay with Stripe (Apple Pay / card), then your label is created automatically.`}
+                ? "✅ Fee paid — tap Generate Label to create your USPS label."
+                : `Pay trade fee ($${fmt(tradeFee)}) + USPS label ($${fmt(Number(rate?.price || s.shippingCost || 0))}) with Stripe, then your label is created automatically.`}
             </div>
           )}
 
@@ -468,7 +471,7 @@ export default function ShipTab({
 
           <div style={{ marginTop: 12, textAlign: "center", fontSize: 10, color: "#bbb", lineHeight: 1.4 }}>
             {isTrade
-              ? `Trade fee $${fmt(tradeFee)} per party · then USPS label via Shippo`
+              ? `$${fmt(tradeFee)} trade fee + USPS label · paid before Shippo creates the label`
               : "Sale labels covered from checkout escrow · Shippo + USPS"}
             {txn ? ` · ${txn.type}` : ""}
           </div>

@@ -1,12 +1,18 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import Stripe from "https://esm.sh/stripe@14.25.0?target=deno";
-import { computePurchaseTotals, loadShippingRatesFromDb } from "../_shared/pricing.ts";
+import {
+  computePurchaseTotals,
+  getShippingRate,
+  loadShippingRatesFromDb,
+} from "../_shared/pricing.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
 };
+
+const TRADE_FEE_DOLLARS = 2;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -48,22 +54,54 @@ Deno.serve(async (req) => {
     });
 
     let amountCents = Math.round(Number(body.amountCents) || 0);
+    let tradeFeeCents = 0;
+    let labelCents = 0;
+    let shippingLabel = "";
+
+    // Flatten metadata to strings only (Stripe requirement)
+    const rawMeta = body.metadata && typeof body.metadata === "object" ? body.metadata : {};
     const metadata: Record<string, string> = {
       purpose,
       user_id: user.id,
-      ...(body.metadata || {}),
     };
+    for (const [k, v] of Object.entries(rawMeta)) {
+      if (v == null) continue;
+      metadata[k] = String(v);
+    }
 
-    // Trade fee: flat $2.00 per party — never trust client amount
+    // Trade / label pay: $2 trade fee + USPS label cost (from shipment rates)
     if (purpose === "trade_fee") {
-      amountCents = 200;
+      tradeFeeCents = Math.round(TRADE_FEE_DOLLARS * 100);
       metadata.purpose = "trade_fee";
-      if (body.metadata?.shipment_id) {
-        metadata.shipment_id = String(body.metadata.shipment_id);
+      const shipmentId = String(
+        body.shipmentId || rawMeta.shipment_id || metadata.shipment_id || "",
+      ).trim();
+      if (shipmentId) metadata.shipment_id = shipmentId;
+
+      if (shipmentId) {
+        const { data: sh } = await supabase
+          .from("shipments")
+          .select("id, from_user, figure_value, shipping_cost, figure_name")
+          .eq("id", shipmentId)
+          .maybeSingle();
+        if (!sh) return json({ error: "Shipment not found" }, 404);
+        if (sh.from_user !== user.id) {
+          return json({ error: "Only the sender can pay for this label" }, 403);
+        }
+        const rates = await loadShippingRatesFromDb(supabase);
+        const figureValue = Number(sh.figure_value) || 0;
+        const rate = getShippingRate(figureValue, rates);
+        const stored = Number(sh.shipping_cost);
+        const labelDollars =
+          Number.isFinite(stored) && stored > 0 ? stored : Number(rate?.price) || 0;
+        labelCents = Math.round(labelDollars * 100);
+        shippingLabel = rate?.label || "USPS Ground Advantage";
+        metadata.label_cents = String(labelCents);
+        metadata.trade_fee_cents = String(tradeFeeCents);
+        metadata.figure_name = String(sh.figure_name || "");
       }
-      if (body.shipmentId) {
-        metadata.shipment_id = String(body.shipmentId);
-      }
+
+      amountCents = tradeFeeCents + labelCents;
     }
 
     // Purchase: compute totals from listing (never trust client amount)
@@ -79,9 +117,10 @@ Deno.serve(async (req) => {
       }
       const value = Number(listing.value);
       const rates = await loadShippingRatesFromDb(supabase);
-      const { fee, shipping, insurance, shippingLabel, grandTotal, net } =
+      const { fee, shipping, insurance, shippingLabel: sLabel, grandTotal, net } =
         computePurchaseTotals(value, rates);
       amountCents = Math.round(grandTotal * 100);
+      shippingLabel = sLabel;
       Object.assign(metadata, {
         listing_id: listing.id,
         buyer_id: user.id,
@@ -92,7 +131,7 @@ Deno.serve(async (req) => {
         net: String(net),
         shipping: String(shipping),
         insurance: String(insurance),
-        shipping_label: shippingLabel,
+        shipping_label: sLabel,
       });
     }
 
@@ -122,12 +161,17 @@ Deno.serve(async (req) => {
       };
     }
 
-    const intent = await stripe.paymentIntents.create(intentParams as Stripe.PaymentIntentCreateParams);
+    const intent = await stripe.paymentIntents.create(
+      intentParams as Stripe.PaymentIntentCreateParams,
+    );
 
     return json({
       clientSecret: intent.client_secret,
       paymentIntentId: intent.id,
       amountCents,
+      tradeFeeCents: purpose === "trade_fee" ? tradeFeeCents : undefined,
+      labelCents: purpose === "trade_fee" ? labelCents : undefined,
+      shippingLabel: shippingLabel || undefined,
     });
   } catch (e) {
     console.error("create-payment-intent", e);

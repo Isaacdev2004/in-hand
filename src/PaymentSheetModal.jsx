@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { createPaymentIntent, getStripe } from "./lib/stripePaymentSheet";
 
+function fmtMoney(cents) {
+  return `$${(Number(cents || 0) / 100).toFixed(2)}`;
+}
+
 /**
  * In-app Stripe Payment Sheet (Payment Element).
  * Supports cards + Apple Pay / Google Pay when Stripe + device allow.
@@ -11,6 +15,7 @@ export default function PaymentSheetModal({
   subtitle = "Card details are handled by Stripe — never stored in In Hand.",
   amountCents,
   amountLabel,
+  breakdown = null, // [{ label, amountCents }] optional UI hint before server confirms
   purpose = "purchase",
   listingId,
   metadata = {},
@@ -22,6 +27,8 @@ export default function PaymentSheetModal({
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [chargedCents, setChargedCents] = useState(amountCents);
+  const [lines, setLines] = useState(breakdown || []);
   const [ship, setShip] = useState({
     name: defaultShipping?.name || "",
     street: defaultShipping?.street || "",
@@ -33,112 +40,149 @@ export default function PaymentSheetModal({
   const elementsRef = useRef(null);
   const stripeRef = useRef(null);
   const peRef = useRef(null);
+  const mountGen = useRef(0);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        setLoading(true);
-        setError("");
-
-        // For purchase we create intent after address is ready (re-run when ship changes via Pay click)
-        // Initial mount: create without shipping if not required; if required wait until user taps Pay
-        if (requireShipping) {
-          setLoading(false);
-          return;
-        }
-
-        const { clientSecret } = await createPaymentIntent({
-          amountCents,
-          purpose,
-          metadata: { ...metadata, listingId },
-          listingId,
-        });
-        if (cancelled) return;
-        const stripe = await getStripe();
-        if (!stripe) throw new Error("Stripe failed to load");
-        stripeRef.current = stripe;
-        const elements = stripe.elements({
-          clientSecret,
-          appearance: { theme: "stripe", variables: { borderRadius: "12px" } },
-        });
-        elementsRef.current = elements;
-        const pe = elements.create("payment", {
-          layout: "tabs",
-          wallets: { applePay: "auto", googlePay: "auto" },
-        });
-        peRef.current = pe;
-        if (mountRef.current) {
-          pe.mount(mountRef.current);
-        }
-        setLoading(false);
-      } catch (e) {
-        if (!cancelled) {
-          setError(e?.message || "Could not start payment");
-          setLoading(false);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-      try {
-        peRef.current?.unmount?.();
-      } catch (_) {
-        /* ignore */
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount once per amount/purpose; shipping filled on Pay
-  }, [amountCents, purpose, listingId, requireShipping]);
-
-  const ensureElements = async () => {
-    if (elementsRef.current && stripeRef.current) return;
-    if (requireShipping) {
-      if (!ship.name || !ship.street || !ship.city || !ship.state || !ship.zip) {
-        throw new Error("Enter a complete US shipping address");
-      }
+  const destroyPaymentElement = () => {
+    try {
+      peRef.current?.unmount?.();
+    } catch {
+      /* ignore */
     }
-    const shippingPayload =
-      requireShipping
-        ? {
-            name: ship.name,
-            address: {
-              line1: ship.street,
-              city: ship.city,
-              state: ship.state,
-              postal_code: ship.zip,
-              country: "US",
-            },
-          }
-        : undefined;
+    peRef.current = null;
+    elementsRef.current = null;
+  };
 
-    const { clientSecret } = await createPaymentIntent({
-      amountCents,
-      purpose,
-      metadata: { ...metadata, listing_id: listingId },
-      listingId,
-      shipping: shippingPayload,
-    });
+  const waitForMountNode = async (gen) => {
+    for (let i = 0; i < 40; i++) {
+      if (gen !== mountGen.current) return null;
+      if (mountRef.current) return mountRef.current;
+      await new Promise((r) => requestAnimationFrame(r));
+    }
+    return mountRef.current;
+  };
+
+  const mountPaymentElement = async (clientSecret, gen) => {
     const stripe = await getStripe();
-    if (!stripe) throw new Error("Stripe failed to load");
+    if (!stripe) throw new Error("Stripe failed to load — check publishable key");
+    if (gen !== mountGen.current) return;
+
+    destroyPaymentElement();
     stripeRef.current = stripe;
+
     const elements = stripe.elements({
       clientSecret,
-      appearance: { theme: "stripe", variables: { borderRadius: "12px" } },
+      appearance: {
+        theme: "stripe",
+        variables: { borderRadius: "12px", colorPrimary: "#2C3E50" },
+      },
     });
+    if (gen !== mountGen.current) return;
     elementsRef.current = elements;
-    if (peRef.current) {
-      try {
-        peRef.current.unmount();
-      } catch (_) {
-        /* ignore */
-      }
-    }
+
     const pe = elements.create("payment", {
       layout: "tabs",
       wallets: { applePay: "auto", googlePay: "auto" },
     });
     peRef.current = pe;
-    if (mountRef.current) pe.mount(mountRef.current);
+
+    const node = await waitForMountNode(gen);
+    if (!node || gen !== mountGen.current) return;
+    pe.mount(node);
+  };
+
+  useEffect(() => {
+    const gen = ++mountGen.current;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        setLoading(true);
+        setError("");
+
+        if (requireShipping) {
+          setLoading(false);
+          return;
+        }
+
+        const intent = await createPaymentIntent({
+          amountCents,
+          purpose,
+          metadata: { ...metadata, ...(listingId ? { listingId } : {}) },
+          listingId,
+          shipmentId: metadata?.shipment_id,
+        });
+        if (cancelled || gen !== mountGen.current) return;
+
+        if (intent.amountCents) setChargedCents(intent.amountCents);
+        if (purpose === "trade_fee" && (intent.tradeFeeCents != null || intent.labelCents != null)) {
+          const next = [];
+          if (intent.tradeFeeCents != null) {
+            next.push({ label: "Trade fee", amountCents: intent.tradeFeeCents });
+          }
+          if (intent.labelCents != null && intent.labelCents > 0) {
+            next.push({
+              label: intent.shippingLabel ? `USPS label (${intent.shippingLabel})` : "USPS shipping label",
+              amountCents: intent.labelCents,
+            });
+          }
+          if (next.length) setLines(next);
+        }
+
+        await mountPaymentElement(intent.clientSecret, gen);
+        if (cancelled || gen !== mountGen.current) return;
+        setLoading(false);
+      } catch (e) {
+        if (!cancelled && gen === mountGen.current) {
+          const msg = e?.message || "Could not start payment";
+          setError(
+            /elements store/i.test(msg)
+              ? "Payment form failed to load. Close and try again — if it keeps happening, Stripe keys may be mismatched (test vs live)."
+              : msg,
+          );
+          setLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      mountGen.current += 1;
+      destroyPaymentElement();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [amountCents, purpose, listingId, requireShipping, metadata?.shipment_id]);
+
+  const ensureElements = async () => {
+    if (elementsRef.current && stripeRef.current && peRef.current) return;
+    if (requireShipping) {
+      if (!ship.name || !ship.street || !ship.city || !ship.state || !ship.zip) {
+        throw new Error("Enter a complete US shipping address");
+      }
+    }
+    const shippingPayload = requireShipping
+      ? {
+          name: ship.name,
+          address: {
+            line1: ship.street,
+            city: ship.city,
+            state: ship.state,
+            postal_code: ship.zip,
+            country: "US",
+          },
+        }
+      : undefined;
+
+    const gen = ++mountGen.current;
+    const intent = await createPaymentIntent({
+      amountCents,
+      purpose,
+      metadata: { ...metadata, ...(listingId ? { listing_id: listingId } : {}) },
+      listingId,
+      shipmentId: metadata?.shipment_id,
+      shipping: shippingPayload,
+    });
+    if (intent.amountCents) setChargedCents(intent.amountCents);
+    await mountPaymentElement(intent.clientSecret, gen);
   };
 
   const handlePay = async () => {
@@ -148,6 +192,8 @@ export default function PaymentSheetModal({
       await ensureElements();
       const stripe = stripeRef.current;
       const elements = elementsRef.current;
+      if (!stripe || !elements) throw new Error("Payment form not ready — close and reopen");
+
       const { error: submitErr } = await elements.submit();
       if (submitErr) throw new Error(submitErr.message);
 
@@ -179,12 +225,18 @@ export default function PaymentSheetModal({
       }
       throw new Error("Payment not completed");
     } catch (e) {
-      setError(e?.message || "Payment failed");
+      const msg = e?.message || "Payment failed";
+      setError(
+        /elements store/i.test(msg)
+          ? "Payment form glitched. Close this sheet and tap Generate Label again."
+          : msg,
+      );
     } finally {
       setBusy(false);
     }
   };
 
+  const displayLabel = amountLabel || fmtMoney(chargedCents);
   const IS = {
     background: "#fff",
     border: "1px solid #d8e0ea",
@@ -210,6 +262,7 @@ export default function PaymentSheetModal({
       }}
     >
       <div
+        className="inhand-sheet"
         style={{
           background: "#fff",
           borderRadius: "28px 28px 0 0",
@@ -235,7 +288,7 @@ export default function PaymentSheetModal({
           </button>
         </div>
 
-        {amountLabel && (
+        {(lines?.length > 0 || displayLabel) && (
           <div
             style={{
               background: "#f0fff8",
@@ -243,13 +296,32 @@ export default function PaymentSheetModal({
               borderRadius: 14,
               padding: "12px 14px",
               marginBottom: 14,
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
             }}
           >
-            <span style={{ fontSize: 13, fontWeight: 700, color: "#2C3E50" }}>Total</span>
-            <span style={{ fontSize: 20, fontWeight: 900, color: "#00b894" }}>{amountLabel}</span>
+            {(lines || []).map((row) => (
+              <div
+                key={row.label}
+                style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, fontSize: 13, color: "#555" }}
+              >
+                <span>{row.label}</span>
+                <span style={{ fontWeight: 700 }}>{fmtMoney(row.amountCents)}</span>
+              </div>
+            ))}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginTop: lines?.length ? 8 : 0,
+                paddingTop: lines?.length ? 8 : 0,
+                borderTop: lines?.length ? "1px solid #00b89433" : "none",
+              }}
+            >
+              <span style={{ fontSize: 13, fontWeight: 700, color: "#2C3E50" }}>Total</span>
+              <span style={{ fontSize: 20, fontWeight: 900, color: "#00b894" }}>
+                {fmtMoney(chargedCents) || displayLabel}
+              </span>
+            </div>
           </div>
         )}
 
@@ -268,19 +340,26 @@ export default function PaymentSheetModal({
           </div>
         )}
 
-        <div
-          ref={mountRef}
-          id="inhand-payment-element"
-          style={{
-            minHeight: requireShipping ? 0 : 180,
-            marginBottom: 12,
-            display: requireShipping && loading ? "none" : "block",
-          }}
-        />
-
-        {loading && !requireShipping && (
-          <div style={{ textAlign: "center", padding: "24px 0", color: "#aaa", fontSize: 13 }}>Loading secure payment…</div>
-        )}
+        {/* Always keep mount node in DOM — Elements store errors if node is missing */}
+        <div style={{ position: "relative", minHeight: requireShipping ? 0 : 180, marginBottom: 12 }}>
+          <div ref={mountRef} id="inhand-payment-element" />
+          {loading && !requireShipping && (
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "#fff",
+                color: "#aaa",
+                fontSize: 13,
+              }}
+            >
+              Loading secure payment…
+            </div>
+          )}
+        </div>
 
         {error && (
           <div style={{ background: "#fff0f0", borderRadius: 12, padding: "10px 12px", marginBottom: 12, fontSize: 12, color: "#ff6b6b", fontWeight: 600 }}>
@@ -290,7 +369,7 @@ export default function PaymentSheetModal({
 
         <button
           type="button"
-          disabled={busy}
+          disabled={busy || (loading && !requireShipping)}
           onClick={handlePay}
           style={{
             width: "100%",
@@ -302,10 +381,10 @@ export default function PaymentSheetModal({
             fontWeight: 800,
             fontSize: 15,
             cursor: busy ? "default" : "pointer",
-            opacity: busy ? 0.7 : 1,
+            opacity: busy || (loading && !requireShipping) ? 0.7 : 1,
           }}
         >
-          {busy ? "Processing…" : amountLabel ? `Pay ${amountLabel}` : "Pay now"}
+          {busy ? "Processing…" : `Pay ${fmtMoney(chargedCents) || displayLabel}`}
         </button>
         <div style={{ fontSize: 10, color: "#aaa", textAlign: "center", marginTop: 10 }}>
           Powered by Stripe · Apple Pay / Google Pay when available

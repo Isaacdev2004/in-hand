@@ -5648,16 +5648,17 @@ function AppShell({ onSignOut, authUser }) {
         <PaymentSheetModal
           title={
             paymentSheet.mode === "label_trade_fee" || paymentSheet.mode === "trade_fee"
-              ? "Pay $2 trade fee"
+              ? "Pay trade fee + label"
               : "Pay with card"
           }
           subtitle={
             paymentSheet.mode === "label_trade_fee"
-              ? "Pay your trade fee — then we create your USPS label automatically. Apple Pay / cards via Stripe."
+              ? "Trade fee + USPS label — paid together. Then we create your label automatically."
               : "Secure Stripe Payment Sheet — Apple Pay / cards. We never store card numbers."
           }
           amountCents={paymentSheet.amountCents}
           amountLabel={paymentSheet.amountLabel}
+          breakdown={paymentSheet.breakdown || null}
           purpose={paymentSheet.mode === "purchase" ? "purchase" : "trade_fee"}
           listingId={paymentSheet.listingId}
           requireShipping={!!paymentSheet.requireShipping}
@@ -6107,10 +6108,16 @@ function AppShell({ onSignOut, authUser }) {
           onNotify={notify}
           onOpenAddresses={() => setShowAddressModal(true)}
           onRequestTradeFeePayment={(shipment, addrs) => {
+            const labelCost = Number(addrs?.labelCost ?? shipment.shippingCost ?? 0);
+            const total = TRADE_FEE + labelCost;
             setPaymentSheet({
               mode: "label_trade_fee",
-              amountCents: Math.round(TRADE_FEE * 100),
-              amountLabel: `$${fmt(TRADE_FEE)}`,
+              amountCents: Math.round(total * 100),
+              amountLabel: `$${fmt(total)}`,
+              breakdown: [
+                { label: "Trade fee", amountCents: Math.round(TRADE_FEE * 100) },
+                { label: "USPS shipping label", amountCents: Math.round(labelCost * 100) },
+              ],
               requireShipping: false,
               metadata: {
                 purpose: "trade_fee",

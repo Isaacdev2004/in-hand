@@ -75,6 +75,7 @@ export async function createPaymentIntent({
   purpose,
   metadata,
   listingId,
+  shipmentId,
   shipping,
 }) {
   if (!supabase) throw new Error("Supabase is not configured.");
@@ -88,11 +89,13 @@ export async function createPaymentIntent({
       purpose,
       metadata,
       listingId,
+      shipmentId,
       shipping,
     }),
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.error || `PaymentIntent failed (${res.status})`);
+  if (!body.clientSecret) throw new Error("Missing clientSecret from payment server");
   return body;
 }
 
