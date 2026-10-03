@@ -28,6 +28,7 @@ export function userFromRow(r) {
     verified: !!r.verified,
     isAdmin: !!r.is_admin,
     stripeAccountId: r.stripe_account_id || null,
+    stripeCustomerId: r.stripe_customer_id || null,
   };
 }
 
@@ -170,6 +171,8 @@ export function tradeProposalFromRow(r) {
     topupCounterRound: r.topup_counter_round ?? 0,
     topupStatus: r.topup_status || "none",
     lastTopupBy: r.last_topup_by || null,
+    topupPaymentIntentId: r.topup_payment_intent_id || null,
+    topupPaidAt: r.topup_paid_at || null,
     status: r.status,
     createdAt: r.created_at,
   };

@@ -104,6 +104,53 @@ Deno.serve(async (req) => {
       amountCents = tradeFeeCents + labelCents;
     }
 
+    // Trade cash top-up: charged on Accept Trade (held in escrow). Platform takes 5%.
+    if (purpose === "topup") {
+      const proposalId = String(
+        body.proposalId || rawMeta.proposal_id || metadata.proposal_id || "",
+      ).trim();
+      if (!proposalId) return json({ error: "proposal_id required for topup" }, 400);
+
+      const { data: prop, error: propErr } = await supabase
+        .from("trade_proposals")
+        .select(
+          "id, status, proposer_id, receiver_id, topup_suggested, topup_agreed, topup_payment_intent_id, topup_paid_at",
+        )
+        .eq("id", proposalId)
+        .maybeSingle();
+      if (propErr || !prop) return json({ error: "Trade proposal not found" }, 404);
+      if (prop.status !== "pending" && prop.status !== "pending_topup") {
+        return json({ error: "Proposal is not awaiting top-up" }, 400);
+      }
+      if (prop.topup_paid_at) {
+        return json({ error: "Top-up already paid for this trade" }, 409);
+      }
+
+      const topupDollars = Number(prop.topup_agreed || prop.topup_suggested || 0);
+      if (topupDollars <= 0) return json({ error: "No top-up on this trade" }, 400);
+
+      const feeDollars = Number((topupDollars * 0.05).toFixed(2));
+      const netDollars = Number((topupDollars - feeDollars).toFixed(2));
+      amountCents = Math.round(topupDollars * 100);
+
+      metadata.purpose = "topup";
+      metadata.proposal_id = proposalId;
+      metadata.payer_id = user.id;
+      metadata.payee_id = String(
+        user.id === prop.proposer_id ? prop.receiver_id : prop.proposer_id,
+      );
+      metadata.topup_cents = String(amountCents);
+      metadata.fee_cents = String(Math.round(feeDollars * 100));
+      metadata.net_cents = String(Math.round(netDollars * 100));
+      metadata.platform_fee_pct = "5";
+
+      // Only the designated payer (or either party if unclear) may start payment —
+      // accept flow always opens sheet for the user who owes; we allow proposer or receiver.
+      if (user.id !== prop.proposer_id && user.id !== prop.receiver_id) {
+        return json({ error: "Not a party to this trade" }, 403);
+      }
+    }
+
     // Purchase: compute totals from listing (never trust client amount)
     if (purpose === "purchase" && body.listingId) {
       const { data: listing, error: listErr } = await supabase
@@ -165,6 +212,16 @@ Deno.serve(async (req) => {
       intentParams as Stripe.PaymentIntentCreateParams,
     );
 
+    if (purpose === "topup" && metadata.proposal_id) {
+      await supabase
+        .from("trade_proposals")
+        .update({
+          topup_payment_intent_id: intent.id,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", metadata.proposal_id);
+    }
+
     return json({
       clientSecret: intent.client_secret,
       paymentIntentId: intent.id,
@@ -172,6 +229,8 @@ Deno.serve(async (req) => {
       tradeFeeCents: purpose === "trade_fee" ? tradeFeeCents : undefined,
       labelCents: purpose === "trade_fee" ? labelCents : undefined,
       shippingLabel: shippingLabel || undefined,
+      feeCents: purpose === "topup" ? Number(metadata.fee_cents || 0) : undefined,
+      netCents: purpose === "topup" ? Number(metadata.net_cents || 0) : undefined,
     });
   } catch (e) {
     console.error("create-payment-intent", e);

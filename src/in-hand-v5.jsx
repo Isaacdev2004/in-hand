@@ -38,6 +38,8 @@ import {
 import { createShippingLabel } from "./lib/shippoLabel";
 import { startStripeConnectOnboarding, transferSellerPayout } from "./lib/stripeConnect";
 import PaymentSheetModal from "./PaymentSheetModal";
+import SetupPaymentModal from "./SetupPaymentModal";
+import { hasUsablePaymentMethod, hasStripeConnect, syncPaymentMethods } from "./lib/stripeCustomer";
 import ShipTab from "./ShipTab";
 import { fetchEbayMarketValue, getCachedMarketValue } from "./lib/ebayMarketValue";
 import {
@@ -402,7 +404,7 @@ const EMPTY_DB = {
 };
 const fmt = (n) => n.toFixed(2);
 
-/** Card IDs locked in any pending trade proposal. */
+/** Card IDs locked in any pending (or awaiting top-up) trade proposal. */
 function pendingTradeCardIds(proposals) {
   const ids = new Set();
   for (const p of proposals || []) {
@@ -3973,7 +3975,9 @@ function AppShell({ onSignOut, authUser }) {
   const [editingCard, setEditingCard] = useState(null);
   const [showAddUser, setShowAddUser] = useState(false);
   const [checkoutCard, setCheckoutCard] = useState(null);
-  const [paymentSheet, setPaymentSheet] = useState(null); // { mode: 'purchase'|'trade_fee', card?, amountCents, ... }
+  const [paymentSheet, setPaymentSheet] = useState(null); // { mode: 'purchase'|'trade_fee'|'topup'|'label_trade_fee', ... }
+  const [setupPaymentModal, setSetupPaymentModal] = useState(null); // { reason, onReady } | null
+  const [pendingAcceptProposal, setPendingAcceptProposal] = useState(null);
   const [trackingModal, setTrackingModal] = useState(null);
   const [addTrackingFor, setAddTrackingFor] = useState(null);
   const [tradeGuide, setTradeGuide] = useState(null); // { proposal } after accept
@@ -4451,6 +4455,13 @@ function AppShell({ onSignOut, authUser }) {
   }).sort((a,b)=>sortBy==="match"?b.matchScore-a.matchScore:b.value-a.value);
 
   const handleSendTradeProposal = async ({ targetCard, offeredCardIds, topupSuggested }) => {
+    if (!hasUsablePaymentMethod(myUser)) {
+      setSetupPaymentModal({
+        reason: "Add a payment method to continue",
+        onReady: () => handleSendTradeProposal({ targetCard, offeredCardIds, topupSuggested }),
+      });
+      return;
+    }
     const locked = pendingTradeCardIds(db.tradeProposals);
     if (locked.has(targetCard.id) || offeredCardIds.some((id) => locked.has(id))) {
       notify("❌ One of these figures is already in a pending trade");
@@ -4631,11 +4642,26 @@ function AppShell({ onSignOut, authUser }) {
     }
     const topup = proposal.topupAgreed || proposal.topupSuggested || 0;
     const proposerTotal = offeredCards.reduce((s, c) => s + c.value, 0);
-    const iOwe = targetCard.value > proposerTotal;
+    const proposerPays = targetCard.value > proposerTotal;
     const topupFee = topup > 0 ? parseFloat((topup * PLATFORM_FEE).toFixed(2)) : 0;
     const txns = [];
-    if (topup > 0 && iOwe) {
-      txns.push({ id: "t" + Date.now() + "u", type: "topup", buyerId: proposal.proposerId, sellerId: proposal.receiverId, cardId: targetCard.id, amount: topup, fee: topupFee, net: topup - topupFee, status: "in_escrow", method: "escrow", date: new Date().toISOString().split("T")[0], cardName: `Top-up: ${offeredCards.map((c) => c.name).join(" + ")} ⇄ ${targetCard.name}` });
+    if (topup > 0) {
+      const payerId = proposerPays ? proposal.proposerId : proposal.receiverId;
+      const payeeId = proposerPays ? proposal.receiverId : proposal.proposerId;
+      txns.push({
+        id: proposal.topupPaymentIntentId ? `t_topup_${proposal.topupPaymentIntentId}` : `t_topup_${proposal.id}`,
+        type: "topup",
+        buyerId: payerId,
+        sellerId: payeeId,
+        cardId: targetCard.id,
+        amount: topup,
+        fee: topupFee,
+        net: topup - topupFee,
+        status: "in_escrow",
+        method: "stripe_payment_sheet",
+        date: new Date().toISOString().split("T")[0],
+        cardName: `Top-up: ${offeredCards.map((c) => c.name).join(" + ")} ⇄ ${targetCard.name}`,
+      });
     }
 
     if (supabase) {
@@ -4718,17 +4744,161 @@ function AppShell({ onSignOut, authUser }) {
     return true;
   };
 
+  const requirePaymentMethod = (reason, onReady) => {
+    if (hasUsablePaymentMethod(myUser)) {
+      onReady?.();
+      return true;
+    }
+    setSetupPaymentModal({ reason, onReady });
+    return false;
+  };
+
+  const topupPayerIdForProposal = (proposal) => {
+    const targetCard = db.cards.find((c) => c.id === proposal.targetCardId);
+    const offeredCards = (proposal.offeredCardIds || []).map((id) => db.cards.find((c) => c.id === id)).filter(Boolean);
+    if (!targetCard || !offeredCards.length) return null;
+    const offerTotal = offeredCards.reduce((s, c) => s + (c.value || 0), 0);
+    // Party receiving the higher-value side pays cash top-up when values differ
+    return targetCard.value > offerTotal ? proposal.proposerId : proposal.receiverId;
+  };
+
   const handleAcceptTradeProposal = async (proposal) => {
-    const agreed = { ...proposal, topupAgreed: proposal.topupSuggested, topupStatus: proposal.topupSuggested > 0 ? "accepted" : proposal.topupStatus };
-    const ok = await executeTradeSwap(agreed);
-    if (ok) {
-      setTradeGuide({ proposal: agreed });
-      notify("🤝 Trade accepted — pay fee & generate your label");
+    const topup = Number(proposal.topupSuggested || proposal.topupAgreed || 0);
+    const agreed = {
+      ...proposal,
+      topupAgreed: topup,
+      topupStatus: topup > 0 ? "accepted" : proposal.topupStatus,
+    };
+
+    // No cash top-up — accept immediately (still require a card on file for marketplace trust)
+    if (topup <= 0) {
+      if (!hasUsablePaymentMethod(myUser)) {
+        setSetupPaymentModal({
+          reason: "Add a payment method to accept trades",
+          onReady: () => handleAcceptTradeProposal(proposal),
+        });
+        return;
+      }
+      const ok = await executeTradeSwap(agreed);
+      if (ok) {
+        setTradeGuide({ proposal: agreed });
+        notify("🤝 Trade accepted — pay fee & generate your label");
+      }
+      return;
+    }
+
+    const payerId = topupPayerIdForProposal(proposal);
+    // Accepting party pays top-up when they owe; otherwise require payer to have a card, then charge acceptor UX per client: sheet on Accept
+    // Client brief: Payment Sheet slides up when receiver taps Accept — charge the payer (active user if they owe, else they confirm while we charge their top-up if they are payer)
+    const payerIsMe = payerId === activeUserId;
+
+    if (!hasUsablePaymentMethod(myUser) && payerIsMe) {
+      requirePaymentMethod("Add a payment method to pay the trade top-up", () => handleAcceptTradeProposal(proposal));
+      return;
+    }
+    if (!payerIsMe) {
+      const payer = getUser(payerId);
+      if (!hasUsablePaymentMethod(payer)) {
+        notify(`❌ ${payer?.username || "Your trade partner"} must add a payment method before you can accept (they owe the $${fmt(topup)} top-up)`);
+        return;
+      }
+      // Partner owes — still open sheet for acceptor? Client said sheet on Accept.
+      // Charge the acceptor only if they are payer; if partner pays, mark pending_topup and notify partner.
+      if (supabase) {
+        await updateTradeProposal(proposal.id, { status: "pending_topup", topupAgreed: topup, topupStatus: "pending_payment" });
+      }
+      setDb((d) => ({
+        ...d,
+        tradeProposals: (d.tradeProposals || []).map((p) =>
+          p.id === proposal.id ? { ...p, status: "pending_topup", topupAgreed: topup, topupStatus: "pending_payment" } : p
+        ),
+      }));
+      if (supabase) {
+        await insertNotification({
+          id: `n_topup_due_${proposal.id}_${Date.now()}`,
+          recipientId: payerId,
+          type: "trade_topup",
+          read: false,
+          title: "Pay trade top-up to complete accept",
+          body: `Pay $${fmt(topup)} (held in escrow; In Hand keeps 5%). Then the trade completes.`,
+          link: "trades",
+          relatedUserId: activeUserId,
+        });
+      }
+      notify(`⏳ Accepted pending $${fmt(topup)} top-up from ${payer?.username || "partner"}`);
+      return;
+    }
+
+    // I owe the top-up — Stripe Payment Sheet on Accept (escrow)
+    setPendingAcceptProposal(agreed);
+    const fee = parseFloat((topup * PLATFORM_FEE).toFixed(2));
+    setPaymentSheet({
+      mode: "topup",
+      amountCents: Math.round(topup * 100),
+      amountLabel: `$${fmt(topup)}`,
+      breakdown: [
+        { label: "Trade top-up (held in escrow)", amountCents: Math.round(topup * 100) },
+      ],
+      requireShipping: false,
+      metadata: {
+        purpose: "topup",
+        proposal_id: proposal.id,
+      },
+      pendingAccept: agreed,
+      subtitleNote: `In Hand keeps 5% ($${fmt(fee)}) from escrow; partner receives $${fmt(topup - fee)} after both figures deliver. Refunded if the trade is cancelled before shipping.`,
+    });
+  };
+
+  const handlePayPendingTopup = (proposal) => {
+    const topup = Number(proposal.topupAgreed || proposal.topupSuggested || 0);
+    if (topup <= 0) return;
+    if (!hasUsablePaymentMethod(myUser)) {
+      setSetupPaymentModal({
+        reason: "Add a payment method to pay the trade top-up",
+        onReady: () => handlePayPendingTopup(proposal),
+      });
+      return;
+    }
+    const fee = parseFloat((topup * PLATFORM_FEE).toFixed(2));
+    const agreed = { ...proposal, topupAgreed: topup, topupStatus: "accepted" };
+    setPendingAcceptProposal(agreed);
+    setPaymentSheet({
+      mode: "topup",
+      amountCents: Math.round(topup * 100),
+      amountLabel: `$${fmt(topup)}`,
+      breakdown: [{ label: "Trade top-up (held in escrow)", amountCents: Math.round(topup * 100) }],
+      requireShipping: false,
+      metadata: { purpose: "topup", proposal_id: proposal.id },
+      pendingAccept: agreed,
+      subtitleNote: `In Hand keeps 5% ($${fmt(fee)}) from escrow. Refunded if cancelled before shipping.`,
+    });
+  };
+
+  const refundTopupIfNeeded = async (proposal) => {
+    if (!supabase || !proposal?.id || !proposal.topupPaidAt && !proposal.topupPaymentIntentId) return;
+    try {
+      const supabaseUrl = (process.env.REACT_APP_SUPABASE_URL || "").replace(/\/$/, "");
+      const anon = process.env.REACT_APP_SUPABASE_ANON_KEY;
+      const { data: sessWrap } = await supabase.auth.getSession();
+      const token = sessWrap?.session?.access_token;
+      if (!token) return;
+      await fetch(`${supabaseUrl}/functions/v1/refund-trade-topup`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          apikey: anon,
+        },
+        body: JSON.stringify({ proposalId: proposal.id }),
+      });
+    } catch (e) {
+      console.error("In Hand: top-up refund failed", e);
     }
   };
 
   const handleDeclineTradeProposal = async (proposalId) => {
     const proposal = (db.tradeProposals || []).find((p) => p.id === proposalId);
+    await refundTopupIfNeeded(proposal);
     if (supabase) {
       const { error } = await updateTradeProposal(proposalId, { status: "declined", topupStatus: "declined" });
       if (error) console.error("In Hand: decline trade proposal failed", error);
@@ -4780,6 +4950,7 @@ function AppShell({ onSignOut, authUser }) {
 
   const handleWithdrawTradeProposal = async (proposalId) => {
     const proposal = (db.tradeProposals || []).find((p) => p.id === proposalId);
+    await refundTopupIfNeeded(proposal);
     if (supabase) {
       const { error } = await updateTradeProposal(proposalId, { status: "withdrawn" });
       if (error) console.error("In Hand: withdraw trade proposal failed", error);
@@ -4998,6 +5169,15 @@ function AppShell({ onSignOut, authUser }) {
   };
 
   const handleSaveVaultCard = async (card, opts = {}) => {
+    if (card.wantsBuy && !hasStripeConnect(myUser)) {
+      notify("Set up payouts to receive money from sales");
+      try {
+        await handleConnectPayouts();
+      } catch {
+        /* notified inside */
+      }
+      return;
+    }
     if (opts.isDelete || card?._delete) {
       await handleDeleteCard(card.id);
       setEditingCard(null);
@@ -5066,6 +5246,15 @@ function AppShell({ onSignOut, authUser }) {
       return;
     }
     const nextVal = !card[field];
+    if (field === "wantsBuy" && nextVal && !hasStripeConnect(myUser)) {
+      notify("Set up payouts to receive money from sales");
+      try {
+        await handleConnectPayouts();
+      } catch (e) {
+        /* handleConnectPayouts notifies */
+      }
+      return;
+    }
     if (supabase) {
       const { error } = await updateListing(cardId, { [field]: nextVal });
       if (error) {
@@ -5082,6 +5271,17 @@ function AppShell({ onSignOut, authUser }) {
   };
 
   const handlePurchaseWithCard = async (card) => {
+    if (!hasUsablePaymentMethod(myUser)) {
+      setCheckoutCard(null);
+      setSetupPaymentModal({
+        reason: "Add a payment method to continue",
+        onReady: () => {
+          setCheckoutCard(card);
+          handlePurchaseWithCard(card);
+        },
+      });
+      return;
+    }
     const shippingRate = getShippingRate(card.value) || { price: 0 };
     const fee = parseFloat((card.value * PLATFORM_FEE).toFixed(2));
     const shipping = Number(shippingRate.price) || 0;
@@ -5644,22 +5844,51 @@ function AppShell({ onSignOut, authUser }) {
       )}
       {showAddUser && <AddUserModal onSave={handleAddUser} onClose={()=>setShowAddUser(false)} />}
       {checkoutCard && <CheckoutModal card={checkoutCard} seller={getUser(checkoutCard.ownerId)} onPayWithCard={()=>handlePurchaseWithCard(checkoutCard)} onClose={()=>setCheckoutCard(null)} />}
+      {setupPaymentModal && (
+        <SetupPaymentModal
+          title="Add a payment method"
+          subtitle={setupPaymentModal.reason || "Add a payment method to continue"}
+          onSuccess={(methods) => {
+            setDb((d) => ({
+              ...d,
+              users: (d.users || []).map((u) =>
+                u.id === activeUserId ? { ...u, paymentMethods: methods || [] } : u
+              ),
+            }));
+            const ready = setupPaymentModal.onReady;
+            setSetupPaymentModal(null);
+            notify("✅ Payment method saved");
+            ready?.();
+          }}
+          onClose={() => setSetupPaymentModal(null)}
+        />
+      )}
       {paymentSheet && (
         <PaymentSheetModal
           title={
-            paymentSheet.mode === "label_trade_fee" || paymentSheet.mode === "trade_fee"
+            paymentSheet.mode === "topup"
+              ? "Pay trade top-up"
+              : paymentSheet.mode === "label_trade_fee" || paymentSheet.mode === "trade_fee"
               ? "Pay trade fee + label"
               : "Pay with card"
           }
           subtitle={
-            paymentSheet.mode === "label_trade_fee"
+            paymentSheet.mode === "topup"
+              ? (paymentSheet.subtitleNote || "Held in escrow until both figures deliver. In Hand keeps 5%.")
+              : paymentSheet.mode === "label_trade_fee"
               ? "Trade fee + USPS label — paid together. Then we create your label automatically."
               : "Secure Stripe Payment Sheet — Apple Pay / cards. We never store card numbers."
           }
           amountCents={paymentSheet.amountCents}
           amountLabel={paymentSheet.amountLabel}
           breakdown={paymentSheet.breakdown || null}
-          purpose={paymentSheet.mode === "purchase" ? "purchase" : "trade_fee"}
+          purpose={
+            paymentSheet.mode === "purchase"
+              ? "purchase"
+              : paymentSheet.mode === "topup"
+              ? "topup"
+              : "trade_fee"
+          }
           listingId={paymentSheet.listingId}
           requireShipping={!!paymentSheet.requireShipping}
           defaultShipping={paymentSheet.defaultShipping}
@@ -5667,11 +5896,27 @@ function AppShell({ onSignOut, authUser }) {
           onSuccess={async (paymentIntent) => {
             const mode = paymentSheet.mode;
             const pending = paymentSheet.pendingLabel;
+            const pendingAccept = paymentSheet.pendingAccept || pendingAcceptProposal;
             setPaymentSheet(null);
             if (mode === "purchase") {
               notify("✅ Payment submitted — order appears after Stripe confirms");
               setTimeout(() => { if (supabase) reloadFromSupabase?.(); }, 2500);
               setTab("shipping");
+            } else if (mode === "topup") {
+              notify("✅ Top-up paid — completing trade…");
+              const agreed = pendingAccept
+                ? { ...pendingAccept, topupPaidAt: new Date().toISOString(), topupPaymentIntentId: paymentIntent?.id, topupStatus: "paid" }
+                : null;
+              setPendingAcceptProposal(null);
+              if (agreed) {
+                const ok = await executeTradeSwap(agreed);
+                if (ok) {
+                  setTradeGuide({ proposal: agreed });
+                  notify("🤝 Trade accepted — next: generate your label in Ship");
+                }
+              } else {
+                setTab("trades");
+              }
             } else if (mode === "label_trade_fee") {
               if (!pending?.shipment) {
                 notify("✅ Trade fee paid — open Ship to generate your label");
@@ -5697,7 +5942,10 @@ function AppShell({ onSignOut, authUser }) {
               notify("✅ Payment complete");
             }
           }}
-          onClose={() => setPaymentSheet(null)}
+          onClose={() => {
+            setPaymentSheet(null);
+            setPendingAcceptProposal(null);
+          }}
         />
       )}
       {tradeGuide && (
@@ -6154,19 +6402,53 @@ function AppShell({ onSignOut, authUser }) {
           </div>
 
           {/* Payment methods */}
-          <div style={{ fontWeight:800,fontSize:15,color:"#2C3E50",marginBottom:12 }}>Payment Methods</div>
-          {myUser?.paymentMethods.map(pm=>(
-            <div key={pm.id} style={{ background:"#fff",borderRadius:16,padding:"14px 16px",marginBottom:10,boxShadow:"0 2px 10px rgba(0,0,0,0.05)",border:"1px solid #E4EBF2",display:"flex",alignItems:"center",gap:12 }}>
-              <div style={{ fontSize:28 }}>{pm.type==="paypal"?"💙":"💳"}</div>
+          <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12 }}>
+            <div style={{ fontWeight:800,fontSize:15,color:"#2C3E50" }}>Payment Methods</div>
+            <button
+              type="button"
+              onClick={() => setSetupPaymentModal({ reason: "Add a card for buys and trade top-ups" })}
+              style={{ background:"#2C3E50",border:"none",borderRadius:10,padding:"7px 12px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer" }}
+            >
+              + Add card
+            </button>
+          </div>
+          {(!myUser?.paymentMethods || myUser.paymentMethods.length === 0) && (
+            <div style={{ background:"#fff8e6",border:"1px solid #f0932b44",borderRadius:14,padding:"14px 16px",marginBottom:12,fontSize:12,color:"#555",lineHeight:1.5 }}>
+              No card on file. Add one to buy, propose trades, or accept trades with a cash top-up.
+            </div>
+          )}
+          {(myUser?.paymentMethods || []).map(pm=>(
+            <div key={pm.id || pm.stripePaymentMethodId} style={{ background:"#fff",borderRadius:16,padding:"14px 16px",marginBottom:10,boxShadow:"0 2px 10px rgba(0,0,0,0.05)",border:"1px solid #E4EBF2",display:"flex",alignItems:"center",gap:12 }}>
+              <div style={{ fontSize:28 }}>💳</div>
               <div style={{ flex:1 }}>
-                <div style={{ fontWeight:700,fontSize:13,color:"#2C3E50" }}>{pm.type==="paypal"?`PayPal · ${pm.email}`:`${pm.brand} ···· ${pm.last4}`}</div>
+                <div style={{ fontWeight:700,fontSize:13,color:"#2C3E50" }}>{(pm.brand || "Card").toString()} ···· {pm.last4}</div>
                 {pm.expiry&&<div style={{ fontSize:11,color:"#aaa" }}>Expires {pm.expiry}</div>}
               </div>
               {pm.isDefault&&<span style={{ fontSize:9,background:"#e8fff6",color:"#00b894",borderRadius:6,padding:"2px 8px",fontWeight:700 }}>DEFAULT</span>}
             </div>
           ))}
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                const { paymentMethods } = await syncPaymentMethods();
+                setDb((d) => ({
+                  ...d,
+                  users: (d.users || []).map((u) =>
+                    u.id === activeUserId ? { ...u, paymentMethods: paymentMethods || [] } : u
+                  ),
+                }));
+                notify("✅ Payment methods refreshed");
+              } catch (e) {
+                notify(`❌ ${e?.message || "Could not refresh cards"}`);
+              }
+            }}
+            style={{ width:"100%",background:"#EEF2F7",border:"none",borderRadius:12,padding:"11px",fontWeight:700,fontSize:12,color:"#555",cursor:"pointer",marginBottom:12 }}
+          >
+            Refresh from Stripe
+          </button>
           <div style={{ background:"#EAF1FA",borderRadius:14,padding:"14px 16px",marginBottom:24,fontSize:12,color:"#555",lineHeight:1.55 }}>
-            Purchases use <strong>Stripe Checkout</strong> — enter your card when you buy a listing. Saved cards here are for display only until Stripe Customer is wired.
+            Cards are saved with <strong>Stripe</strong> (Apple Pay / card). In Hand never stores card numbers. Payouts for sales use <strong>Stripe Connect</strong> under Account → Set up payouts.
           </div>
 
           {/* Transaction history */}
@@ -6250,16 +6532,18 @@ function AppShell({ onSignOut, authUser }) {
                 ))}
               </div>
 
-              {myTradeProposals.filter((p) => p.status === "pending" || p.status === "completed").length === 0 ? (
+              {myTradeProposals.filter((p) => p.status === "pending" || p.status === "pending_topup" || p.status === "completed").length === 0 ? (
                 <div style={{ textAlign:"center",padding:"48px 20px",background:"#fff",borderRadius:20,border:"1px dashed #DCE6F0" }}>
                   <div style={{ fontSize:48,marginBottom:12 }}>🤝</div>
                   <div style={{ fontWeight:700,fontSize:15,color:"#2C3E50",marginBottom:6 }}>No trades yet</div>
                   <div style={{ fontSize:12,color:"#aaa",marginBottom:16 }}>Browse listings and tap ⇄ Trade to send a proposal.</div>
                   <button type="button" onClick={()=>setTab("browse")} style={{ background:"#2C3E50",border:"none",borderRadius:14,padding:"10px 22px",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer" }}>Browse Listings</button>
                 </div>
-              ) : myTradeProposals.filter((p) => p.status === "pending" || p.status === "completed").map((proposal) => {
+              ) : myTradeProposals.filter((p) => p.status === "pending" || p.status === "pending_topup" || p.status === "completed").map((proposal) => {
                 const isIncoming = proposal.receiverId === activeUserId && proposal.status === "pending";
                 const isSent = proposal.proposerId === activeUserId && proposal.status === "pending";
+                const isPendingTopup = proposal.status === "pending_topup";
+                const iOweTopup = isPendingTopup && topupPayerIdForProposal(proposal) === activeUserId;
                 const isDone = proposal.status === "completed";
                 const otherId = proposal.proposerId === activeUserId ? proposal.receiverId : proposal.proposerId;
                 const other = getUser(otherId);
@@ -6268,6 +6552,8 @@ function AppShell({ onSignOut, authUser }) {
                 const offeredTotal = offeredCards.reduce((s, c) => s + c.value, 0);
                 const statusCfg = isDone
                   ? { label:"Trade complete", color:"#aaa", bg:"#f5f5f5", icon:"✅" }
+                  : isPendingTopup
+                    ? { label: iOweTopup ? "Pay top-up to finish" : "Waiting on top-up", color:"#f0932b", bg:"#fff8e6", icon:"💰" }
                   : isIncoming
                     ? { label:"They want to trade!", color:"#00b894", bg:"#f0fff8", icon:"🔔" }
                     : { label:"Awaiting response", color:"#f0932b", bg:"#fff8e6", icon:"⏳" };
@@ -6324,6 +6610,23 @@ function AppShell({ onSignOut, authUser }) {
                       <div style={{ display:"flex",gap:8 }}>
                         <button type="button" onClick={()=>handleWithdrawTradeProposal(proposal.id)} style={{ flex:1,background:"#EEF2F7",border:"none",borderRadius:12,padding:"11px",fontWeight:700,fontSize:12,color:"#888",cursor:"pointer" }}>Withdraw</button>
                         <button type="button" onClick={()=>openThread(otherId, targetCard)} style={{ flex:2,background:"#EEF2F7",border:"none",borderRadius:12,padding:"11px",fontWeight:700,fontSize:12,color:"#3A7BD5",cursor:"pointer" }}>💬 Message</button>
+                      </div>
+                    )}
+                    {isPendingTopup && (
+                      <div style={{ display:"flex",flexDirection:"column",gap:8 }}>
+                        <div style={{ textAlign:"center",fontSize:11,color:"#f0932b",fontWeight:700,lineHeight:1.4 }}>
+                          {iOweTopup
+                            ? `Pay $${fmt(proposal.topupAgreed || proposal.topupSuggested || 0)} top-up (escrow) to complete this trade`
+                            : `Waiting for ${other?.username || "partner"} to pay the top-up`}
+                        </div>
+                        {iOweTopup ? (
+                          <button type="button" onClick={()=>handlePayPendingTopup(proposal)} style={{ width:"100%",background:"linear-gradient(135deg,#2C3E50,#2d3561)",border:"none",borderRadius:12,padding:"12px",fontWeight:800,fontSize:13,color:"#fff",cursor:"pointer" }}>
+                            💳 Pay top-up & complete trade
+                          </button>
+                        ) : null}
+                        <button type="button" onClick={()=>handleDeclineTradeProposal(proposal.id)} style={{ width:"100%",background:"#fff0f0",border:"none",borderRadius:12,padding:"11px",fontWeight:700,fontSize:12,color:"#ff6b6b",cursor:"pointer" }}>
+                          Cancel trade (refund top-up if paid)
+                        </button>
                       </div>
                     )}
                     {isDone && (() => {

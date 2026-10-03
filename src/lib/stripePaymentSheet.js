@@ -76,6 +76,7 @@ export async function createPaymentIntent({
   metadata,
   listingId,
   shipmentId,
+  proposalId,
   shipping,
 }) {
   if (!supabase) throw new Error("Supabase is not configured.");
@@ -90,6 +91,7 @@ export async function createPaymentIntent({
       metadata,
       listingId,
       shipmentId,
+      proposalId,
       shipping,
     }),
   });

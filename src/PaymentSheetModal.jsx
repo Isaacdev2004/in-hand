@@ -110,6 +110,7 @@ export default function PaymentSheetModal({
           metadata: { ...metadata, ...(listingId ? { listingId } : {}) },
           listingId,
           shipmentId: metadata?.shipment_id,
+          proposalId: metadata?.proposal_id,
         });
         if (cancelled || gen !== mountGen.current) return;
 
@@ -179,6 +180,7 @@ export default function PaymentSheetModal({
       metadata: { ...metadata, ...(listingId ? { listing_id: listingId } : {}) },
       listingId,
       shipmentId: metadata?.shipment_id,
+      proposalId: metadata?.proposal_id,
       shipping: shippingPayload,
     });
     if (intent.amountCents) setChargedCents(intent.amountCents);

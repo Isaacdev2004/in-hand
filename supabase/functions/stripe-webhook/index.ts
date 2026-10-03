@@ -92,6 +92,11 @@ Deno.serve(async (req) => {
         await supabase.from("stripe_events").insert({ id: event.id });
         return json({ received: true, trade_fee: true });
       }
+      if (md.purpose === "topup" && md.proposal_id) {
+        await fulfillTradeTopup(supabase, pi, md);
+        await supabase.from("stripe_events").insert({ id: event.id });
+        return json({ received: true, topup: true });
+      }
       if (md.purpose === "purchase" || md.listing_id) {
         await fulfillPurchase(supabase, {
           idKey: pi.id,
@@ -117,6 +122,54 @@ Deno.serve(async (req) => {
     });
   }
 });
+
+async function fulfillTradeTopup(
+  supabase: ReturnType<typeof createClient>,
+  pi: Stripe.PaymentIntent,
+  md: Stripe.Metadata,
+) {
+  const proposalId = md.proposal_id;
+  if (!proposalId) return;
+
+  await supabase
+    .from("trade_proposals")
+    .update({
+      topup_payment_intent_id: pi.id,
+      topup_paid_at: new Date().toISOString(),
+      topup_status: "paid",
+      topup_agreed: Number(md.topup_cents || 0) / 100,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", proposalId);
+
+  const txnId = `t_topup_${pi.id}`;
+  const { data: existing } = await supabase
+    .from("transactions")
+    .select("id")
+    .eq("id", txnId)
+    .maybeSingle();
+  if (existing) return;
+
+  const amount = Number(md.topup_cents || pi.amount || 0) / 100;
+  const fee = Number(md.fee_cents || 0) / 100;
+  const net = Number(md.net_cents || 0) / 100 || amount - fee;
+
+  await supabase.from("transactions").insert({
+    id: txnId,
+    type: "topup",
+    buyer_id: md.payer_id,
+    seller_id: md.payee_id,
+    card_id: null,
+    amount,
+    fee,
+    net,
+    status: "in_escrow",
+    method: "stripe_payment_sheet",
+    date: new Date().toISOString().split("T")[0],
+    card_name: `Trade top-up (proposal ${proposalId})`,
+    rated: false,
+  });
+}
 
 async function fulfillPurchase(
   supabase: ReturnType<typeof createClient>,

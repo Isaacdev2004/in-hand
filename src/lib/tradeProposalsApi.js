@@ -32,6 +32,8 @@ export async function updateTradeProposal(proposalId, patch) {
   if (patch.topupCounterRound !== undefined) row.topup_counter_round = patch.topupCounterRound;
   if (patch.topupStatus !== undefined) row.topup_status = patch.topupStatus;
   if (patch.lastTopupBy !== undefined) row.last_topup_by = patch.lastTopupBy;
+  if (patch.topupPaymentIntentId !== undefined) row.topup_payment_intent_id = patch.topupPaymentIntentId;
+  if (patch.topupPaidAt !== undefined) row.topup_paid_at = patch.topupPaidAt;
   return supabase.from("trade_proposals").update(row).eq("id", proposalId);
 }
 
