@@ -408,7 +408,7 @@ const fmt = (n) => n.toFixed(2);
 function pendingTradeCardIds(proposals) {
   const ids = new Set();
   for (const p of proposals || []) {
-    if (p.status !== "pending") continue;
+    if (p.status !== "pending" && p.status !== "pending_topup") continue;
     if (p.targetCardId) ids.add(p.targetCardId);
     for (const id of p.offeredCardIds || []) ids.add(id);
   }

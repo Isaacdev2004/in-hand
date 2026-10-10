@@ -7,6 +7,14 @@ const config: CapacitorConfig = {
   server: {
     androidScheme: "https",
     iosScheme: "https",
+    // Stripe.js / Elements iframes must load inside the Capacitor WebView
+    allowNavigation: [
+      "*.stripe.com",
+      "js.stripe.com",
+      "hooks.stripe.com",
+      "m.stripe.network",
+      "api.stripe.com",
+    ],
   },
   ios: {
     // Let CSS env(safe-area-inset-*) own the insets — "automatic" letterboxes the WebView
