@@ -68,6 +68,8 @@ Deno.serve(async (req) => {
     return json({
       clientSecret: setupIntent.client_secret,
       customerId,
+      // Client must use matching pk_live / pk_test or confirm fails with "No such setupintent"
+      livemode: !!setupIntent.livemode,
     });
   } catch (e) {
     console.error("create-setup-intent", e);

@@ -112,8 +112,22 @@ export default function SetupPaymentModal({
     setReady(false);
     setError("");
     try {
-      const { clientSecret } = await createSetupIntent();
+      const setup = await createSetupIntent();
+      const { clientSecret, livemode } = setup || {};
       if (!clientSecret) throw new Error("SetupIntent returned no client secret — is create-setup-intent deployed?");
+      const pk = process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY || "";
+      const pkLive = pk.startsWith("pk_live_");
+      const pkTest = pk.startsWith("pk_test_");
+      if (livemode === true && pkTest) {
+        throw new Error(
+          "Stripe key mismatch: server is LIVE but this app build has a TEST publishable key. Set Codemagic REACT_APP_STRIPE_PUBLISHABLE_KEY to pk_live_… and rebuild.",
+        );
+      }
+      if (livemode === false && pkLive) {
+        throw new Error(
+          "Stripe key mismatch: server is TEST but this app build has a LIVE publishable key. Align Codemagic key with Supabase STRIPE_SECRET_KEY.",
+        );
+      }
       if (gen !== genRef.current) return;
       await mountForm(clientSecret, gen);
       if (gen !== genRef.current) return;
@@ -183,7 +197,12 @@ export default function SetupPaymentModal({
       const synced = await syncPaymentMethods();
       onSuccess?.(synced?.paymentMethods || []);
     } catch (e) {
-      setError(e?.message || "Could not save card");
+      const raw = e?.message || "Could not save card";
+      setError(
+        /no such setupintent/i.test(raw)
+          ? "Stripe keys don’t match (app publishable key vs Supabase secret). Use the same live/test account on both, then rebuild."
+          : raw,
+      );
     } finally {
       setBusy(false);
     }
