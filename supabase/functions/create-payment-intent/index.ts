@@ -187,10 +187,11 @@ Deno.serve(async (req) => {
     }
 
     const shipping = body.shipping;
+    // Card only — automatic_payment_methods enables redirect wallets that open Safari in Capacitor.
     const intentParams: Record<string, unknown> = {
       amount: amountCents,
       currency: (body.currency || "usd").toLowerCase(),
-      automatic_payment_methods: { enabled: true },
+      payment_method_types: ["card"],
       metadata,
       receipt_email: user.email || undefined,
     };

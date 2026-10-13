@@ -7,13 +7,22 @@ const config: CapacitorConfig = {
   server: {
     androidScheme: "https",
     iosScheme: "https",
-    // Stripe.js / Elements iframes must load inside the Capacitor WebView
+    // Keep Stripe 3DS / Elements hosts inside the WebView (not Safari)
     allowNavigation: [
+      "stripe.com",
       "*.stripe.com",
       "js.stripe.com",
       "hooks.stripe.com",
+      "checkout.stripe.com",
+      "pay.stripe.com",
+      "hooks.stripe.com",
+      "m.stripe.com",
       "m.stripe.network",
       "api.stripe.com",
+      "3ds.stripe.com",
+      "verify.stripe.com",
+      "stripecdn.com",
+      "*.stripecdn.com",
     ],
   },
   ios: {

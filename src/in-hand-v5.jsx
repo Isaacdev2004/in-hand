@@ -829,10 +829,10 @@ function CheckoutModal({ card, seller, onPayWithCard, onClose }) {
               </div>
             </div>
             <div style={{ background:"#EAF1FA", borderRadius:12, padding:"10px 14px", marginBottom:20, fontSize:11, color:"#555", lineHeight:1.5 }}>
-              Next step opens Stripe&apos;s <strong>Payment Sheet</strong> (Apple Pay / card). Card numbers stay with Stripe — never saved in In Hand. Enter your US ship-to address there so the seller can print your label.
+              Next step stays <strong>in the app</strong> — enter your card and US ship-to address here. Card numbers go only to Stripe, never stored in In Hand.
             </div>
             <Btn onClick={handlePay} disabled={busy} style={{ background:"#2C3E50", color:"#fff", width:"100%", opacity:busy?0.7:1 }}>
-              {busy ? "Opening…" : `Continue to Payment Sheet · $${fmt(grandTotal)}`}
+              {busy ? "Opening…" : `Continue to pay · $${fmt(grandTotal)}`}
             </Btn>
         </>
       </div>
@@ -5877,7 +5877,7 @@ function AppShell({ onSignOut, authUser }) {
               ? (paymentSheet.subtitleNote || "Held in escrow until both figures deliver. In Hand keeps 5%.")
               : paymentSheet.mode === "label_trade_fee"
               ? "Trade fee + USPS label — paid together. Then we create your label automatically."
-              : "Secure Stripe Payment Sheet — Apple Pay / cards. We never store card numbers."
+              : "Pay in-app with your card. Numbers go only to Stripe — never stored in In Hand."
           }
           amountCents={paymentSheet.amountCents}
           amountLabel={paymentSheet.amountLabel}

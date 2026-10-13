@@ -1,12 +1,21 @@
 import { Capacitor } from "@capacitor/core";
 
-/** Payment Element (iframes/wallets) is flaky in iOS WKWebView — use Card Element natively. */
+/**
+ * Payment Element + wallets often redirect to Safari in Capacitor WKWebView.
+ * Always use Card Element on native so card entry + confirm stay in-app.
+ */
 export function preferCardElement() {
   try {
-    return Capacitor.isNativePlatform();
+    if (Capacitor.isNativePlatform()) return true;
   } catch {
-    return false;
+    /* ignore */
   }
+  try {
+    if (typeof window !== "undefined" && window.Capacitor?.isNativePlatform?.()) return true;
+  } catch {
+    /* ignore */
+  }
+  return false;
 }
 
 export function waitForNode(ref, { maxFrames = 60 } = {}) {

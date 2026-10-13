@@ -4,8 +4,10 @@ import './styles/app.css';
 import InHand from './in-hand-v5';
 import { initCapacitor } from './native/capacitorBridge';
 import { installWindowStorage } from './lib/localStorage';
+import { keepStripeInApp } from './lib/keepStripeInApp';
 
 installWindowStorage();
+keepStripeInApp();
 initCapacitor();
 
 class AppErrorBoundary extends React.Component {

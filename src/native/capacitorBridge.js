@@ -10,6 +10,7 @@ import {
   isPasswordRecoveryUrl,
 } from "../lib/authRedirect";
 import { isListingUrl, parseListingIdFromUrl } from "../lib/shareLinks";
+import { keepStripeInApp } from "../lib/keepStripeInApp";
 
 /** Deep-link handler: auth callback, listing share, or ?tab=browse|vault|wallet */
 async function handleIncomingUrl(url) {
@@ -74,6 +75,9 @@ async function hideSplashSafe() {
 
 export async function initCapacitor() {
   if (!Capacitor.isNativePlatform()) return;
+
+  // Before Stripe.js loads — stop payment 3DS popups from opening Safari
+  keepStripeInApp();
 
   document.documentElement.classList.add("capacitor-native");
   document.body.classList.add("capacitor-native");

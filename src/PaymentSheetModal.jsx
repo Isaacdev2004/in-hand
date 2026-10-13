@@ -256,8 +256,12 @@ export default function PaymentSheetModal({
         const { error: confErr, paymentIntent: pi } = await stripe.confirmCardPayment(
           clientSecretRef.current,
           confirmOpts,
+          { handleActions: true },
         );
         if (confErr) throw new Error(confErr.message);
+        if (pi?.status === "requires_action") {
+          throw new Error("Bank verification stayed incomplete — try again without leaving the app");
+        }
         paymentIntent = pi;
       } else {
         const elements = elementsRef.current;

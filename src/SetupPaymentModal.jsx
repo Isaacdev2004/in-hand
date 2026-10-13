@@ -152,10 +152,15 @@ export default function SetupPaymentModal({
       if (useCard) {
         const card = cardRef.current;
         if (!card) throw new Error("Card form not ready — tap Retry");
-        const { error: confErr, setupIntent } = await stripe.confirmCardSetup(clientSecretRef.current, {
-          payment_method: { card },
-        });
+        const { error: confErr, setupIntent } = await stripe.confirmCardSetup(
+          clientSecretRef.current,
+          { payment_method: { card } },
+          { handleActions: true },
+        );
         if (confErr) throw new Error(confErr.message);
+        if (setupIntent?.status === "requires_action") {
+          throw new Error("Card verification needs another step — try again in the app sheet");
+        }
         if (setupIntent?.status !== "succeeded" && setupIntent?.status !== "processing") {
           throw new Error("Card was not saved");
         }
