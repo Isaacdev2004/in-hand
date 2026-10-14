@@ -38,14 +38,60 @@ export async function createSetupIntent() {
   return body;
 }
 
-export async function syncPaymentMethods() {
+export async function syncPaymentMethods({ ensurePaymentMethodId } = {}) {
   if (!supabase) throw new Error("Supabase is not configured.");
   const res = await fetch(fnUrl("sync-payment-methods"), {
     method: "POST",
     headers: await authHeaders(),
-    body: "{}",
+    body: JSON.stringify({
+      ensurePaymentMethodId: ensurePaymentMethodId || undefined,
+    }),
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.error || `Sync failed (${res.status})`);
   return body;
+}
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+/**
+ * After SetupIntent succeeds, pull cards from Stripe (retry once — attach can lag).
+ */
+export async function syncPaymentMethodsAfterSetup(setupIntent) {
+  const pmRaw = setupIntent?.payment_method;
+  const pmId = typeof pmRaw === "string" ? pmRaw : pmRaw?.id || "";
+
+  let synced = await syncPaymentMethods({ ensurePaymentMethodId: pmId || undefined });
+  let methods = synced?.paymentMethods || [];
+
+  if (!methods.length) {
+    await sleep(900);
+    synced = await syncPaymentMethods({ ensurePaymentMethodId: pmId || undefined });
+    methods = synced?.paymentMethods || [];
+  }
+
+  // Last resort: show the card from the SetupIntent response so UI isn't empty
+  if (!methods.length && pmRaw && typeof pmRaw === "object" && pmRaw.card) {
+    methods = [
+      {
+        id: pmRaw.id || pmId,
+        type: "card",
+        brand: pmRaw.card.brand || "card",
+        last4: pmRaw.card.last4 || "••••",
+        expiry: `${String(pmRaw.card.exp_month).padStart(2, "0")}/${String(pmRaw.card.exp_year).slice(-2)}`,
+        isDefault: true,
+        stripePaymentMethodId: pmRaw.id || pmId,
+      },
+    ];
+  }
+
+  if (!methods.length) {
+    throw new Error(
+      "Card was confirmed with Stripe but not listed on your profile yet. Tap Refresh from Stripe — if it stays empty, sync-payment-methods may need deploy (Owner).",
+    );
+  }
+
+  return { ...synced, paymentMethods: methods };
 }

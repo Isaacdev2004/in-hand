@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { getStripe } from "./lib/stripePaymentSheet";
-import { createSetupIntent, syncPaymentMethods } from "./lib/stripeCustomer";
+import { createSetupIntent, syncPaymentMethodsAfterSetup } from "./lib/stripeCustomer";
 import { clearMountNode, preferCardElement, waitForNode } from "./lib/stripeElements";
 
 /**
@@ -178,24 +178,26 @@ export default function SetupPaymentModal({
         if (setupIntent?.status !== "succeeded" && setupIntent?.status !== "processing") {
           throw new Error("Card was not saved");
         }
-      } else {
-        const elements = elementsRef.current;
-        if (!elements) throw new Error("Form not ready — tap Retry");
-        const { error: submitErr } = await elements.submit();
-        if (submitErr) throw new Error(submitErr.message);
-        const { error: confErr, setupIntent } = await stripe.confirmSetup({
-          elements,
-          confirmParams: { return_url: window.location.href.split("#")[0] },
-          redirect: "if_required",
-        });
-        if (confErr) throw new Error(confErr.message);
-        if (setupIntent?.status !== "succeeded" && setupIntent?.status !== "processing") {
-          throw new Error("Card was not saved");
-        }
+        const synced = await syncPaymentMethodsAfterSetup(setupIntent);
+        onSuccess?.(synced.paymentMethods);
+        return;
       }
 
-      const synced = await syncPaymentMethods();
-      onSuccess?.(synced?.paymentMethods || []);
+      const elements = elementsRef.current;
+      if (!elements) throw new Error("Form not ready — tap Retry");
+      const { error: submitErr } = await elements.submit();
+      if (submitErr) throw new Error(submitErr.message);
+      const { error: confErr, setupIntent } = await stripe.confirmSetup({
+        elements,
+        confirmParams: { return_url: window.location.href.split("#")[0] },
+        redirect: "if_required",
+      });
+      if (confErr) throw new Error(confErr.message);
+      if (setupIntent?.status !== "succeeded" && setupIntent?.status !== "processing") {
+        throw new Error("Card was not saved");
+      }
+      const synced = await syncPaymentMethodsAfterSetup(setupIntent);
+      onSuccess?.(synced.paymentMethods);
     } catch (e) {
       const raw = e?.message || "Could not save card";
       setError(

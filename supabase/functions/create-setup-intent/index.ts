@@ -38,11 +38,40 @@ Deno.serve(async (req) => {
       httpClient: Stripe.createFetchHttpClient(),
     });
 
-    const { data: profile } = await supabase
+    let { data: profile } = await supabase
       .from("users")
       .select("id, username, stripe_customer_id, payment_methods")
       .eq("id", user.id)
       .maybeSingle();
+
+    // Auth user without profile row → sync later finds no customer (card "saves" but UI empty)
+    if (!profile) {
+      const username =
+        user.user_metadata?.username || user.email?.split("@")[0] || "Collector";
+      const row = {
+        id: user.id,
+        username,
+        avatar: user.user_metadata?.avatar || username.slice(0, 2).toUpperCase(),
+        rating: 5,
+        trades_completed: 0,
+        joined: new Date().toISOString().split("T")[0],
+        location: "",
+        wishlist: [],
+        wallet_balance: 0,
+        payment_methods: [],
+        addresses: [],
+        flag_count: 0,
+      };
+      const { data: inserted, error: insErr } = await supabase
+        .from("users")
+        .upsert(row, { onConflict: "id" })
+        .select("id, username, stripe_customer_id, payment_methods")
+        .maybeSingle();
+      if (insErr) {
+        console.error("create-setup-intent: profile upsert failed", insErr);
+      }
+      profile = inserted || row;
+    }
 
     let customerId = profile?.stripe_customer_id || "";
     if (!customerId) {
@@ -52,10 +81,13 @@ Deno.serve(async (req) => {
         metadata: { user_id: user.id },
       });
       customerId = customer.id;
-      await supabase
+      const { error: updErr } = await supabase
         .from("users")
         .update({ stripe_customer_id: customerId })
         .eq("id", user.id);
+      if (updErr) {
+        console.error("create-setup-intent: stripe_customer_id update failed", updErr);
+      }
     }
 
     const setupIntent = await stripe.setupIntents.create({
@@ -68,7 +100,6 @@ Deno.serve(async (req) => {
     return json({
       clientSecret: setupIntent.client_secret,
       customerId,
-      // Client must use matching pk_live / pk_test or confirm fails with "No such setupintent"
       livemode: !!setupIntent.livemode,
     });
   } catch (e) {

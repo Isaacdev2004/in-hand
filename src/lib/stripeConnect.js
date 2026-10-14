@@ -1,14 +1,16 @@
 import { Capacitor } from "@capacitor/core";
 import { supabase } from "./supabaseClient";
+import { openInAppBrowser } from "./openInAppBrowser";
 
 const WEB_ORIGIN = "https://in-hand-b5gm.vercel.app";
 
 function connectReturnUrls() {
   // Stripe requires https return URLs (custom schemes are rejected).
+  // Vercel page can deep-link back via inhand:// after Connect finishes.
   if (Capacitor.isNativePlatform()) {
     return {
-      returnUrl: `${WEB_ORIGIN}/?connect=return`,
-      refreshUrl: `${WEB_ORIGIN}/?connect=refresh`,
+      returnUrl: `${WEB_ORIGIN}/?connect=return&app=1`,
+      refreshUrl: `${WEB_ORIGIN}/?connect=refresh&app=1`,
     };
   }
   const base = `${window.location.origin}${window.location.pathname}`;
@@ -44,6 +46,15 @@ export async function startStripeConnectOnboarding() {
   if (!res.ok) throw new Error(body.error || `Connect failed (${res.status})`);
   if (!body.url) throw new Error("No Connect onboarding URL returned");
   return body;
+}
+
+/**
+ * Opens Stripe Connect Express onboarding inside an in-app browser sheet
+ * (not the external Safari app). Bank KYC must use Stripe’s hosted form.
+ */
+export async function openConnectOnboardingInApp(url) {
+  if (!url) throw new Error("No Connect URL");
+  return openInAppBrowser(url);
 }
 
 /**

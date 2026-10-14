@@ -32,6 +32,9 @@ Deno.serve(async (req) => {
     } = await userClient.auth.getUser();
     if (userErr || !user?.id) return json({ error: "Invalid session" }, 401);
 
+    const body = await req.json().catch(() => ({}));
+    const ensurePaymentMethodId = String(body?.ensurePaymentMethodId || "").trim();
+
     const supabase = createClient(supabaseUrl, serviceKey);
     const stripe = new Stripe(stripeKey, {
       apiVersion: "2023-10-16",
@@ -44,16 +47,66 @@ Deno.serve(async (req) => {
       .eq("id", user.id)
       .maybeSingle();
 
-    if (!profile?.stripe_customer_id) {
-      return json({ paymentMethods: [], customerId: null });
+    let customerId = profile?.stripe_customer_id || "";
+
+    // Recover customer if profile row never got stripe_customer_id (common cause of "saved but empty")
+    if (!customerId && ensurePaymentMethodId) {
+      try {
+        const pm = await stripe.paymentMethods.retrieve(ensurePaymentMethodId);
+        if (typeof pm.customer === "string" && pm.customer) {
+          customerId = pm.customer;
+          await supabase
+            .from("users")
+            .update({ stripe_customer_id: customerId })
+            .eq("id", user.id);
+        }
+      } catch (e) {
+        console.warn("sync-payment-methods: PM retrieve failed", e);
+      }
+    }
+
+    if (!customerId && user.email) {
+      const byEmail = await stripe.customers
+        .list({ email: user.email, limit: 5 })
+        .catch(() => null);
+      const hit =
+        byEmail?.data?.find((c) => c.metadata?.user_id === user.id) ||
+        byEmail?.data?.[0];
+      if (hit?.id) {
+        customerId = hit.id;
+        await supabase
+          .from("users")
+          .update({ stripe_customer_id: customerId })
+          .eq("id", user.id);
+      }
+    }
+
+    if (!customerId) {
+      return json({ paymentMethods: [], customerId: null, warning: "No Stripe customer on file" });
+    }
+
+    if (ensurePaymentMethodId) {
+      try {
+        const pm = await stripe.paymentMethods.retrieve(ensurePaymentMethodId);
+        if (!pm.customer) {
+          await stripe.paymentMethods.attach(ensurePaymentMethodId, { customer: customerId });
+        } else if (pm.customer !== customerId) {
+          console.warn("sync-payment-methods: PM belongs to different customer", pm.customer, customerId);
+        }
+        await stripe.customers.update(customerId, {
+          invoice_settings: { default_payment_method: ensurePaymentMethodId },
+        });
+      } catch (e) {
+        console.warn("sync-payment-methods: ensure PM failed", e);
+      }
     }
 
     const list = await stripe.paymentMethods.list({
-      customer: profile.stripe_customer_id,
+      customer: customerId,
       type: "card",
     });
 
-    const customer = await stripe.customers.retrieve(profile.stripe_customer_id);
+    const customer = await stripe.customers.retrieve(customerId);
     const defaultPm =
       typeof customer !== "string" && !customer.deleted
         ? (customer.invoice_settings?.default_payment_method as string) || ""
@@ -64,7 +117,9 @@ Deno.serve(async (req) => {
       type: "card",
       brand: pm.card?.brand || "card",
       last4: pm.card?.last4 || "••••",
-      expiry: pm.card ? `${String(pm.card.exp_month).padStart(2, "0")}/${String(pm.card.exp_year).slice(-2)}` : "",
+      expiry: pm.card
+        ? `${String(pm.card.exp_month).padStart(2, "0")}/${String(pm.card.exp_year).slice(-2)}`
+        : "",
       isDefault: pm.id === defaultPm || (!defaultPm && i === 0),
       stripePaymentMethodId: pm.id,
     }));
@@ -73,12 +128,20 @@ Deno.serve(async (req) => {
       paymentMethods[0].isDefault = true;
     }
 
-    await supabase
+    const { error: updErr } = await supabase
       .from("users")
-      .update({ payment_methods: paymentMethods })
+      .update({
+        payment_methods: paymentMethods,
+        stripe_customer_id: customerId,
+      })
       .eq("id", user.id);
 
-    return json({ paymentMethods, customerId: profile.stripe_customer_id });
+    if (updErr) {
+      console.error("sync-payment-methods: profile update failed", updErr);
+      // Still return Stripe list so the app UI can show the card
+    }
+
+    return json({ paymentMethods, customerId });
   } catch (e) {
     console.error("sync-payment-methods", e);
     return json({ error: String(e?.message ?? e) }, 500);

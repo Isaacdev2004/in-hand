@@ -36,7 +36,11 @@ import {
   markAllNotificationsRead,
 } from "./lib/marketplaceApi";
 import { createShippingLabel } from "./lib/shippoLabel";
-import { startStripeConnectOnboarding, transferSellerPayout } from "./lib/stripeConnect";
+import {
+  openConnectOnboardingInApp,
+  startStripeConnectOnboarding,
+  transferSellerPayout,
+} from "./lib/stripeConnect";
 import PaymentSheetModal from "./PaymentSheetModal";
 import SetupPaymentModal from "./SetupPaymentModal";
 import { hasUsablePaymentMethod, hasStripeConnect, syncPaymentMethods } from "./lib/stripeCustomer";
@@ -5304,7 +5308,7 @@ function AppShell({ onSignOut, authUser }) {
 
   const handleConnectPayouts = async () => {
     try {
-      notify("Opening Set up payouts…");
+      notify("Opening bank setup in the app…");
       const result = await startStripeConnectOnboarding();
       if (result.accountId) {
         setDb((d) => ({
@@ -5315,8 +5319,12 @@ function AppShell({ onSignOut, authUser }) {
         }));
       }
       if (result.url) {
-        window.open(result.url, "_blank");
-        notify(result.ready ? "Payout dashboard opened" : "Complete bank setup in Stripe, then return");
+        await openConnectOnboardingInApp(result.url);
+        notify(
+          result.ready
+            ? "Payout dashboard opened in-app — close the sheet to return"
+            : "Finish bank details in the sheet, then close it to return to In Hand",
+        );
       }
     } catch (err) {
       console.error("In Hand: Connect onboarding failed", err);
@@ -5849,15 +5857,20 @@ function AppShell({ onSignOut, authUser }) {
           title="Add a payment method"
           subtitle={setupPaymentModal.reason || "Add a payment method to continue"}
           onSuccess={(methods) => {
+            const list = Array.isArray(methods) ? methods : [];
+            if (!list.length) {
+              notify("❌ Card confirmed but not listed — tap Refresh from Stripe");
+              return;
+            }
             setDb((d) => ({
               ...d,
               users: (d.users || []).map((u) =>
-                u.id === activeUserId ? { ...u, paymentMethods: methods || [] } : u
+                u.id === activeUserId ? { ...u, paymentMethods: list } : u
               ),
             }));
             const ready = setupPaymentModal.onReady;
             setSetupPaymentModal(null);
-            notify("✅ Payment method saved");
+            notify(`✅ Card saved ···· ${list[0]?.last4 || ""}`);
             ready?.();
           }}
           onClose={() => setSetupPaymentModal(null)}
