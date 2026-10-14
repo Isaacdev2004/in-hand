@@ -22,7 +22,8 @@ workflows:
     scripts:
       - name: Install and build web app
         script: |
-          npm ci
+          # Prefer clean install; fall back if lock/peers drift on Node 22
+          npm ci || npm install --no-audit --no-fund
           npm run build
           npx cap sync ios
       - name: Set up code signing and build IPA
@@ -77,7 +78,7 @@ workflows:
     scripts:
       - name: Install and build web app
         script: |
-          npm ci
+          npm ci || npm install --no-audit --no-fund
           npm run build
           npx cap sync ios
       - name: Set up code signing and build IPA
