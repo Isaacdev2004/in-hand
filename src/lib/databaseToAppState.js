@@ -29,6 +29,8 @@ export function userFromRow(r) {
     isAdmin: !!r.is_admin,
     stripeAccountId: r.stripe_account_id || null,
     stripeCustomerId: r.stripe_customer_id || null,
+    payoutPreference: r.payout_preference || "standard",
+    instantPayoutCard: r.instant_payout_card || null,
   };
 }
 

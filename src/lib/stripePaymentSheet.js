@@ -78,6 +78,7 @@ export async function createPaymentIntent({
   shipmentId,
   proposalId,
   shipping,
+  paymentMethodId,
 }) {
   if (!supabase) throw new Error("Supabase is not configured.");
   const supabaseUrl = (process.env.REACT_APP_SUPABASE_URL || "").replace(/\/$/, "");
@@ -93,6 +94,7 @@ export async function createPaymentIntent({
       shipmentId,
       proposalId,
       shipping,
+      paymentMethodId: paymentMethodId || undefined,
     }),
   });
   const body = await res.json().catch(() => ({}));

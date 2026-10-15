@@ -187,14 +187,38 @@ Deno.serve(async (req) => {
     }
 
     const shipping = body.shipping;
+    // Attach buyer Customer so saved cards can pay this PaymentIntent
+    const { data: buyerProfile } = await supabase
+      .from("users")
+      .select("stripe_customer_id")
+      .eq("id", user.id)
+      .maybeSingle();
+    let customerId = buyerProfile?.stripe_customer_id || "";
+    if (!customerId) {
+      const customer = await stripe.customers.create({
+        email: user.email || undefined,
+        metadata: { user_id: user.id },
+      });
+      customerId = customer.id;
+      await supabase
+        .from("users")
+        .update({ stripe_customer_id: customerId })
+        .eq("id", user.id);
+    }
+
     // Card only — automatic_payment_methods enables redirect wallets that open Safari in Capacitor.
     const intentParams: Record<string, unknown> = {
       amount: amountCents,
       currency: (body.currency || "usd").toLowerCase(),
       payment_method_types: ["card"],
+      customer: customerId,
       metadata,
       receipt_email: user.email || undefined,
     };
+    const savedPm = String(body.paymentMethodId || "").trim();
+    if (savedPm.startsWith("pm_")) {
+      intentParams.payment_method = savedPm;
+    }
     if (shipping?.name && shipping?.address) {
       intentParams.shipping = {
         name: shipping.name,

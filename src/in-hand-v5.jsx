@@ -38,11 +38,13 @@ import {
 import { createShippingLabel } from "./lib/shippoLabel";
 import {
   openConnectOnboardingInApp,
+  setPayoutPreference,
   startStripeConnectOnboarding,
   transferSellerPayout,
 } from "./lib/stripeConnect";
 import PaymentSheetModal from "./PaymentSheetModal";
 import SetupPaymentModal from "./SetupPaymentModal";
+import InstantPayoutCardModal from "./InstantPayoutCardModal";
 import { hasUsablePaymentMethod, hasStripeConnect, syncPaymentMethods } from "./lib/stripeCustomer";
 import ShipTab from "./ShipTab";
 import { fetchEbayMarketValue, getCachedMarketValue } from "./lib/ebayMarketValue";
@@ -3981,6 +3983,7 @@ function AppShell({ onSignOut, authUser }) {
   const [checkoutCard, setCheckoutCard] = useState(null);
   const [paymentSheet, setPaymentSheet] = useState(null); // { mode: 'purchase'|'trade_fee'|'topup'|'label_trade_fee', ... }
   const [setupPaymentModal, setSetupPaymentModal] = useState(null); // { reason, onReady } | null
+  const [showInstantPayoutCard, setShowInstantPayoutCard] = useState(false);
   const [pendingAcceptProposal, setPendingAcceptProposal] = useState(null);
   const [trackingModal, setTrackingModal] = useState(null);
   const [addTrackingFor, setAddTrackingFor] = useState(null);
@@ -5876,6 +5879,30 @@ function AppShell({ onSignOut, authUser }) {
           onClose={() => setSetupPaymentModal(null)}
         />
       )}
+      {showInstantPayoutCard && (
+        <InstantPayoutCardModal
+          onSuccess={(result) => {
+            setDb((d) => ({
+              ...d,
+              users: (d.users || []).map((u) =>
+                u.id === activeUserId
+                  ? {
+                      ...u,
+                      stripeAccountId: result.accountId || u.stripeAccountId,
+                      payoutPreference: "instant",
+                      instantPayoutCard: result.instantPayoutCard || null,
+                    }
+                  : u
+              ),
+            }));
+            setShowInstantPayoutCard(false);
+            notify(
+              `✅ Instant payout debit ···· ${result.instantPayoutCard?.last4 || ""} saved`,
+            );
+          }}
+          onClose={() => setShowInstantPayoutCard(false)}
+        />
+      )}
       {paymentSheet && (
         <PaymentSheetModal
           title={
@@ -5906,6 +5933,7 @@ function AppShell({ onSignOut, authUser }) {
           requireShipping={!!paymentSheet.requireShipping}
           defaultShipping={paymentSheet.defaultShipping}
           metadata={paymentSheet.metadata || {}}
+          savedPaymentMethods={myUser?.paymentMethods || []}
           onSuccess={async (paymentIntent) => {
             const mode = paymentSheet.mode;
             const pending = paymentSheet.pendingLabel;
@@ -6411,7 +6439,7 @@ function AppShell({ onSignOut, authUser }) {
             <div style={{ marginBottom:6 }}>• <strong>Buy figures:</strong> pay with card at checkout (Stripe).</div>
             <div style={{ marginBottom:6 }}>• <strong>Get paid:</strong> after delivery, escrow releases to this balance.</div>
             <div>• <strong>Trade top-ups:</strong> optional cash to balance uneven swaps (held in escrow).</div>
-            <div style={{ marginTop:10,fontSize:11,color:"#888" }}>Bank payout (withdraw) — coming soon.</div>
+            <div style={{ marginTop:10,fontSize:11,color:"#888" }}>Sale payouts: Account → Set up payouts (Instant debit or Standard bank).</div>
           </div>
 
           {/* Payment methods */}
@@ -7203,33 +7231,74 @@ function AppShell({ onSignOut, authUser }) {
             </div>
           </div>
 
-          {/* Seller payouts — primary CTA */}
+          {/* Seller payouts — Instant debit vs Standard bank */}
           <div className="inhand-payouts-cta">
             <div style={{ fontSize:11, fontWeight:700, letterSpacing:1, opacity:0.85, marginBottom:6 }}>SELLER PAYOUTS</div>
-            <div style={{ fontWeight:800, fontSize:18, marginBottom:6 }}>
-              {myUser?.stripeAccountId ? "Manage payouts" : "Set up payouts"}
-            </div>
+            <div style={{ fontWeight:800, fontSize:18, marginBottom:6 }}>Set up payouts</div>
             <div style={{ fontSize:12, lineHeight:1.5, opacity:0.92, marginBottom:14 }}>
-              {myUser?.stripeAccountId
-                ? "Bank onboarding started. Tap to continue setup or open your Stripe Express dashboard. After escrow releases, Stripe pays out to your bank in about 2 business days."
-                : "Add your bank via Stripe Connect Express. Once verified, you automatically receive payouts about 2 business days after escrow releases."}
+              Choose how you get paid after escrow releases. Both use Stripe — pick Instant or Standard.
             </div>
             <button
               type="button"
-              onClick={() => handleConnectPayouts()}
+              onClick={() => setShowInstantPayoutCard(true)}
               style={{
                 width: "100%",
-                background: "#fff",
-                border: "none",
+                background: myUser?.payoutPreference === "instant" ? "#e8fff6" : "#fff",
+                border: myUser?.payoutPreference === "instant" ? "2px solid #00b894" : "none",
                 borderRadius: 14,
                 padding: "14px 16px",
                 color: "#0d5c4a",
                 fontWeight: 800,
-                fontSize: 15,
+                fontSize: 14,
                 cursor: "pointer",
+                marginBottom: 10,
+                textAlign: "left",
               }}
             >
-              {myUser?.stripeAccountId ? "Open payouts →" : "Set up payouts"}
+              <div>⚡ Instant payout — debit card</div>
+              <div style={{ fontWeight:600, fontSize:11, opacity:0.85, marginTop:4, lineHeight:1.4 }}>
+                {myUser?.instantPayoutCard?.last4
+                  ? `Saved ···· ${myUser.instantPayoutCard.last4} · ~30 min · Stripe 1% fee`
+                  : "Enter debit card in-app · ~30 min · Stripe 1% fee (you pay)"}
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  if (myUser?.instantPayoutCard) {
+                    await setPayoutPreference("standard");
+                    setDb((d) => ({
+                      ...d,
+                      users: (d.users || []).map((u) =>
+                        u.id === activeUserId ? { ...u, payoutPreference: "standard" } : u
+                      ),
+                    }));
+                  }
+                } catch {
+                  /* continue to Connect */
+                }
+                handleConnectPayouts();
+              }}
+              style={{
+                width: "100%",
+                background: myUser?.payoutPreference !== "instant" ? "#e8fff6" : "#fff",
+                border: myUser?.payoutPreference !== "instant" ? "2px solid #00b894" : "none",
+                borderRadius: 14,
+                padding: "14px 16px",
+                color: "#0d5c4a",
+                fontWeight: 800,
+                fontSize: 14,
+                cursor: "pointer",
+                textAlign: "left",
+              }}
+            >
+              <div>🏦 Standard payout — bank account</div>
+              <div style={{ fontWeight:600, fontSize:11, opacity:0.85, marginTop:4, lineHeight:1.4 }}>
+                {myUser?.stripeAccountId
+                  ? "Stripe Connect · free · ~2 business days"
+                  : "Bank via Stripe Connect Express · free · ~2 business days"}
+              </div>
             </button>
           </div>
 
@@ -7263,7 +7332,7 @@ function AppShell({ onSignOut, authUser }) {
               { icon:"✏️", label:"Edit Profile",        sub:`${myUser?.username} · ${myUser?.location||"Location not set"}`, action:()=>openEditProfile("profile") },
               { icon:"🎭", label:"Change Avatar",       sub:`Current: ${myUser?.avatar}`, action:()=>openEditProfile("avatar") },
               { icon:"⭐", label:"Wishlist Tags",       sub:myUser?.wishlist?.length ? myUser.wishlist.map(t=>`#${t}`).join(" ") : "None set — tap to add", action:()=>openEditProfile("wishlist") },
-              { icon:"🏦", label:"Set up payouts", sub: myUser?.stripeAccountId ? "Stripe Connect — continue / manage bank" : "Stripe Connect Express — bank for sale payouts", action:()=>handleConnectPayouts() },
+              { icon:"🏦", label:"Set up payouts", sub: myUser?.payoutPreference === "instant" && myUser?.instantPayoutCard?.last4 ? `Instant debit ···· ${myUser.instantPayoutCard.last4}` : myUser?.stripeAccountId ? "Standard bank · Stripe Connect" : "Instant debit or standard bank", action:()=>{ document.querySelector(".inhand-payouts-cta")?.scrollIntoView({ behavior:"smooth", block:"start" }); } },
               { icon:"📍", label:"Shipping Addresses",  sub: myUser?.addresses?.length ? myUser.addresses.map(a=>`${a.label}: ${a.street}`).join(" · ") : "No addresses saved", action:()=>setShowAddressModal(true) },
               { icon:"🔔", label:"Notifications",       sub:"Trade alerts, delivery updates", action:()=>setShowNotifications(true) },
               { icon:"🔒", label:"Privacy & Security",  sub:"Export data, deactivate, delete account", action:()=>openEditProfile("danger") },

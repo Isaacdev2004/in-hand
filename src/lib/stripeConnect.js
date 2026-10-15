@@ -57,6 +57,46 @@ export async function openConnectOnboardingInApp(url) {
   return openInAppBrowser(url);
 }
 
+async function authHeaders() {
+  const anon = process.env.REACT_APP_SUPABASE_ANON_KEY;
+  const { data: sessWrap } = await supabase.auth.getSession();
+  const accessToken = sessWrap?.session?.access_token;
+  if (!accessToken) throw new Error("Sign in required.");
+  return {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${accessToken}`,
+    apikey: anon,
+  };
+}
+
+/** Attach debit card token for Instant Payouts (in-app Card Element → tok_). */
+export async function attachInstantPayoutCard(tokenId) {
+  if (!supabase) throw new Error("Supabase is not configured.");
+  const supabaseUrl = (process.env.REACT_APP_SUPABASE_URL || "").replace(/\/$/, "");
+  const res = await fetch(`${supabaseUrl}/functions/v1/attach-instant-payout-card`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify({ tokenId }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || `Instant payout card failed (${res.status})`);
+  return body;
+}
+
+/** Prefer instant (debit) or standard (bank) for escrow releases. */
+export async function setPayoutPreference(preference) {
+  if (!supabase) throw new Error("Supabase is not configured.");
+  const { data: sessWrap } = await supabase.auth.getSession();
+  const uid = sessWrap?.session?.user?.id;
+  if (!uid) throw new Error("Sign in required.");
+  const { error } = await supabase
+    .from("users")
+    .update({ payout_preference: preference === "instant" ? "instant" : "standard" })
+    .eq("id", uid);
+  if (error) throw error;
+  return { payoutPreference: preference === "instant" ? "instant" : "standard" };
+}
+
 /**
  * After escrow release: transfer seller net to their Connect Express account.
  * Bank payout then follows Stripe’s ~2 business-day Express schedule.
