@@ -4751,6 +4751,23 @@ function AppShell({ onSignOut, authUser }) {
     return true;
   };
 
+  const refreshSavedCards = async () => {
+    try {
+      const { paymentMethods } = await syncPaymentMethods();
+      const list = paymentMethods || [];
+      setDb((d) => ({
+        ...d,
+        users: (d.users || []).map((u) =>
+          u.id === activeUserId ? { ...u, paymentMethods: list } : u
+        ),
+      }));
+      return list;
+    } catch (e) {
+      console.warn("In Hand: refreshSavedCards", e);
+      return myUser?.paymentMethods || [];
+    }
+  };
+
   const requirePaymentMethod = (reason, onReady) => {
     if (hasUsablePaymentMethod(myUser)) {
       onReady?.();
@@ -4839,6 +4856,7 @@ function AppShell({ onSignOut, authUser }) {
     // I owe the top-up — Stripe Payment Sheet on Accept (escrow)
     setPendingAcceptProposal(agreed);
     const fee = parseFloat((topup * PLATFORM_FEE).toFixed(2));
+    const cardsOnFile = await refreshSavedCards();
     setPaymentSheet({
       mode: "topup",
       amountCents: Math.round(topup * 100),
@@ -4847,6 +4865,7 @@ function AppShell({ onSignOut, authUser }) {
         { label: "Trade top-up (held in escrow)", amountCents: Math.round(topup * 100) },
       ],
       requireShipping: false,
+      savedPaymentMethods: cardsOnFile,
       metadata: {
         purpose: "topup",
         proposal_id: proposal.id,
@@ -4856,10 +4875,11 @@ function AppShell({ onSignOut, authUser }) {
     });
   };
 
-  const handlePayPendingTopup = (proposal) => {
+  const handlePayPendingTopup = async (proposal) => {
     const topup = Number(proposal.topupAgreed || proposal.topupSuggested || 0);
     if (topup <= 0) return;
-    if (!hasUsablePaymentMethod(myUser)) {
+    const cardsOnFile = await refreshSavedCards();
+    if (!cardsOnFile.length && !hasUsablePaymentMethod(myUser)) {
       setSetupPaymentModal({
         reason: "Add a payment method to pay the trade top-up",
         onReady: () => handlePayPendingTopup(proposal),
@@ -4875,6 +4895,7 @@ function AppShell({ onSignOut, authUser }) {
       amountLabel: `$${fmt(topup)}`,
       breakdown: [{ label: "Trade top-up (held in escrow)", amountCents: Math.round(topup * 100) }],
       requireShipping: false,
+      savedPaymentMethods: cardsOnFile,
       metadata: { purpose: "topup", proposal_id: proposal.id },
       pendingAccept: agreed,
       subtitleNote: `In Hand keeps 5% ($${fmt(fee)}) from escrow. Refunded if cancelled before shipping.`,
@@ -5278,7 +5299,8 @@ function AppShell({ onSignOut, authUser }) {
   };
 
   const handlePurchaseWithCard = async (card) => {
-    if (!hasUsablePaymentMethod(myUser)) {
+    const cardsOnFile = await refreshSavedCards();
+    if (!cardsOnFile.length && !hasUsablePaymentMethod(myUser)) {
       setCheckoutCard(null);
       setSetupPaymentModal({
         reason: "Add a payment method to continue",
@@ -5303,6 +5325,7 @@ function AppShell({ onSignOut, authUser }) {
       amountCents: Math.round(grandTotal * 100),
       amountLabel: `$${fmt(grandTotal)}`,
       requireShipping: true,
+      savedPaymentMethods: cardsOnFile.length ? cardsOnFile : myUser?.paymentMethods || [],
       defaultShipping: defaultAddr
         ? { name: defaultAddr.name, street: defaultAddr.street, city: defaultAddr.city, state: defaultAddr.state, zip: defaultAddr.zip }
         : { name: myUser?.username || "", street: "", city: "", state: "", zip: "" },
@@ -5933,7 +5956,11 @@ function AppShell({ onSignOut, authUser }) {
           requireShipping={!!paymentSheet.requireShipping}
           defaultShipping={paymentSheet.defaultShipping}
           metadata={paymentSheet.metadata || {}}
-          savedPaymentMethods={myUser?.paymentMethods || []}
+          savedPaymentMethods={
+            paymentSheet.savedPaymentMethods?.length
+              ? paymentSheet.savedPaymentMethods
+              : myUser?.paymentMethods || []
+          }
           onSuccess={async (paymentIntent) => {
             const mode = paymentSheet.mode;
             const pending = paymentSheet.pendingLabel;
@@ -5995,16 +6022,19 @@ function AppShell({ onSignOut, authUser }) {
           cards={db.cards}
           tradeFee={TRADE_FEE}
           onPayFee={() => {
-            setPaymentSheet({
-              mode: "trade_fee",
-              listingId: tradeGuide.proposal?.targetCardId || null,
-              amountCents: Math.round(TRADE_FEE * 100),
-              amountLabel: `$${fmt(TRADE_FEE)}`,
-              requireShipping: false,
-              metadata: {
-                proposal_id: tradeGuide.proposal?.id || "",
-                purpose: "trade_fee",
-              },
+            refreshSavedCards().then((cardsOnFile) => {
+              setPaymentSheet({
+                mode: "trade_fee",
+                listingId: tradeGuide.proposal?.targetCardId || null,
+                amountCents: Math.round(TRADE_FEE * 100),
+                amountLabel: `$${fmt(TRADE_FEE)}`,
+                requireShipping: false,
+                savedPaymentMethods: cardsOnFile,
+                metadata: {
+                  proposal_id: tradeGuide.proposal?.id || "",
+                  purpose: "trade_fee",
+                },
+              });
             });
           }}
           onGoShip={() => {
@@ -6399,20 +6429,23 @@ function AppShell({ onSignOut, authUser }) {
           onRequestTradeFeePayment={(shipment, addrs) => {
             const labelCost = Number(addrs?.labelCost ?? shipment.shippingCost ?? 0);
             const total = TRADE_FEE + labelCost;
-            setPaymentSheet({
-              mode: "label_trade_fee",
-              amountCents: Math.round(total * 100),
-              amountLabel: `$${fmt(total)}`,
-              breakdown: [
-                { label: "Trade fee", amountCents: Math.round(TRADE_FEE * 100) },
-                { label: "USPS shipping label", amountCents: Math.round(labelCost * 100) },
-              ],
-              requireShipping: false,
-              metadata: {
-                purpose: "trade_fee",
-                shipment_id: shipment.id,
-              },
-              pendingLabel: { shipment, ...addrs },
+            refreshSavedCards().then((cardsOnFile) => {
+              setPaymentSheet({
+                mode: "label_trade_fee",
+                amountCents: Math.round(total * 100),
+                amountLabel: `$${fmt(total)}`,
+                breakdown: [
+                  { label: "Trade fee", amountCents: Math.round(TRADE_FEE * 100) },
+                  { label: "USPS shipping label", amountCents: Math.round(labelCost * 100) },
+                ],
+                requireShipping: false,
+                savedPaymentMethods: cardsOnFile,
+                metadata: {
+                  purpose: "trade_fee",
+                  shipment_id: shipment.id,
+                },
+                pendingLabel: { shipment, ...addrs },
+              });
             });
           }}
         />

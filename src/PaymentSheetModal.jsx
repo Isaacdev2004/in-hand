@@ -29,12 +29,12 @@ export default function PaymentSheetModal({
   onSuccess,
   onClose,
 }) {
-  const methods = useMemo(
-    () => (Array.isArray(savedPaymentMethods) ? savedPaymentMethods.filter((p) => pmId(p)) : []),
-    [savedPaymentMethods],
-  );
+  const methods = useMemo(() => {
+    const raw = Array.isArray(savedPaymentMethods) ? savedPaymentMethods : [];
+    return raw.filter((p) => pmId(p));
+  }, [savedPaymentMethods]);
   const defaultPm = methods.find((p) => p.isDefault) || methods[0] || null;
-  const [selectedPmId, setSelectedPmId] = useState(defaultPm ? pmId(defaultPm) : "new");
+  const [selectedPmId, setSelectedPmId] = useState(() => (defaultPm ? pmId(defaultPm) : "new"));
   const useSaved = selectedPmId && selectedPmId !== "new";
 
   const [busy, setBusy] = useState(false);
@@ -59,12 +59,14 @@ export default function PaymentSheetModal({
   const mountGen = useRef(0);
   const useCard = preferCardElement();
 
+  // When Stripe sync fills cards after open, auto-select default
   useEffect(() => {
-    if (defaultPm && selectedPmId === "new" && methods.length) {
-      setSelectedPmId(pmId(defaultPm));
-    }
+    if (!methods.length) return;
+    if (selectedPmId !== "new" && methods.some((p) => pmId(p) === selectedPmId)) return;
+    const next = pmId(defaultPm);
+    if (next) setSelectedPmId(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [methods.length]);
+  }, [methods]);
 
   const destroy = () => {
     try {

@@ -3,9 +3,24 @@ import { getStripe } from "./lib/stripePaymentSheet";
 import { attachInstantPayoutCard } from "./lib/stripeConnect";
 import { clearMountNode, waitForNode } from "./lib/stripeElements";
 
+const fieldWrap = {
+  border: "1px solid #d8e0ea",
+  borderRadius: 12,
+  padding: "12px 14px",
+  background: "#fff",
+  marginBottom: 10,
+};
+
+const labelStyle = {
+  fontSize: 11,
+  fontWeight: 700,
+  color: "#888",
+  marginBottom: 6,
+  letterSpacing: 0.3,
+};
+
 /**
- * Collect debit card in-app (Card Element) for Stripe Instant Payouts.
- * No Stripe website / webview — tokenize + attach to Connect account.
+ * Instant payout debit card — Card Element fields entirely in-app (no Stripe website).
  */
 export default function InstantPayoutCardModal({ onSuccess, onClose }) {
   const [busy, setBusy] = useState(false);
@@ -13,8 +28,12 @@ export default function InstantPayoutCardModal({ onSuccess, onClose }) {
   const [error, setError] = useState("");
   const [ready, setReady] = useState(false);
   const [name, setName] = useState("");
-  const mountRef = useRef(null);
-  const cardRef = useRef(null);
+  const numberRef = useRef(null);
+  const expiryRef = useRef(null);
+  const cvcRef = useRef(null);
+  const numberEl = useRef(null);
+  const expiryEl = useRef(null);
+  const cvcEl = useRef(null);
   const stripeRef = useRef(null);
 
   useEffect(() => {
@@ -27,22 +46,40 @@ export default function InstantPayoutCardModal({ onSuccess, onClose }) {
         if (!stripe) throw new Error("Stripe publishable key missing");
         if (cancelled) return;
         stripeRef.current = stripe;
-        clearMountNode(mountRef.current);
-        const node = await waitForNode(mountRef);
-        if (!node || cancelled) throw new Error("Card form not ready");
+
+        const style = {
+          base: { fontSize: "16px", color: "#2C3E50", "::placeholder": { color: "#aaa" } },
+        };
         const elements = stripe.elements();
-        const card = elements.create("card", {
-          style: {
-            base: { fontSize: "16px", color: "#2C3E50", "::placeholder": { color: "#aaa" } },
-          },
-          hidePostalCode: false,
-        });
-        cardRef.current = card;
-        card.on("change", (e) => {
+
+        const numNode = await waitForNode(numberRef);
+        const expNode = await waitForNode(expiryRef);
+        const cvcNode = await waitForNode(cvcRef);
+        if (!numNode || !expNode || !cvcNode || cancelled) throw new Error("Card form not ready");
+
+        clearMountNode(numNode);
+        clearMountNode(expNode);
+        clearMountNode(cvcNode);
+
+        const cardNumber = elements.create("cardNumber", { style, showIcon: true });
+        const cardExpiry = elements.create("cardExpiry", { style });
+        const cardCvc = elements.create("cardCvc", { style });
+        numberEl.current = cardNumber;
+        expiryEl.current = cardExpiry;
+        cvcEl.current = cardCvc;
+
+        const onChange = (e) => {
           if (e.error) setError(e.error.message);
           else setError("");
-        });
-        card.mount(node);
+        };
+        cardNumber.on("change", onChange);
+        cardExpiry.on("change", onChange);
+        cardCvc.on("change", onChange);
+
+        cardNumber.mount(numNode);
+        cardExpiry.mount(expNode);
+        cardCvc.mount(cvcNode);
+
         setReady(true);
         setLoading(false);
       } catch (e) {
@@ -55,7 +92,9 @@ export default function InstantPayoutCardModal({ onSuccess, onClose }) {
     return () => {
       cancelled = true;
       try {
-        cardRef.current?.destroy?.();
+        numberEl.current?.destroy?.();
+        expiryEl.current?.destroy?.();
+        cvcEl.current?.destroy?.();
       } catch {
         /* ignore */
       }
@@ -68,15 +107,14 @@ export default function InstantPayoutCardModal({ onSuccess, onClose }) {
     try {
       if (!name.trim()) throw new Error("Enter the name on the debit card");
       const stripe = stripeRef.current;
-      const card = cardRef.current;
-      if (!stripe || !card) throw new Error("Card form not ready");
-      const { token, error: tokErr } = await stripe.createToken(card, {
+      const cardNumber = numberEl.current;
+      if (!stripe || !cardNumber) throw new Error("Card form not ready");
+      const { token, error: tokErr } = await stripe.createToken(cardNumber, {
         name: name.trim(),
       });
       if (tokErr) throw new Error(tokErr.message);
       if (!token?.id) throw new Error("Could not tokenize card");
       if (token.card?.funding && token.card.funding !== "debit") {
-        // Soft warn — Instant Payouts require eligible debit; still try attach
         console.warn("In Hand: card funding is", token.card.funding);
       }
       const result = await attachInstantPayoutCard(token.id);
@@ -112,13 +150,8 @@ export default function InstantPayoutCardModal({ onSuccess, onClose }) {
           overflowY: "auto",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-          <div>
-            <div style={{ fontWeight: 800, fontSize: 18, color: "#2C3E50" }}>Set Up Instant Payout</div>
-            <div style={{ fontSize: 11, color: "#888", marginTop: 4, lineHeight: 1.45 }}>
-              Debit card only · money usually within 30 minutes · Stripe ~1% fee (you pay)
-            </div>
-          </div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+          <div style={{ fontWeight: 800, fontSize: 18, color: "#2C3E50" }}>Set Up Instant Payout</div>
           <button
             type="button"
             onClick={onClose}
@@ -129,44 +162,49 @@ export default function InstantPayoutCardModal({ onSuccess, onClose }) {
           </button>
         </div>
 
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Name on card"
-          style={{
-            width: "100%",
-            border: "1px solid #d8e0ea",
-            borderRadius: 12,
-            padding: "12px 14px",
-            fontSize: 16,
-            marginBottom: 12,
-            boxSizing: "border-box",
-            outline: "none",
-          }}
-        />
+        <div style={{ marginBottom: 4 }}>
+          <div style={labelStyle}>Debit card number</div>
+          <div style={{ ...fieldWrap, position: "relative", minHeight: 24 }}>
+            <div ref={numberRef} />
+          </div>
+        </div>
 
-        <div
-          style={{
-            position: "relative",
-            minHeight: 48,
-            marginBottom: 12,
-            padding: "14px 12px",
-            border: "1px solid #d8e0ea",
-            borderRadius: 12,
-            background: "#fff",
-          }}
-        >
-          <div ref={mountRef} style={{ minHeight: 40 }} />
-          {loading && (
-            <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(255,255,255,0.92)", color: "#aaa", fontSize: 13, borderRadius: 12 }}>
-              Loading secure card form…
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 4 }}>
+          <div>
+            <div style={labelStyle}>Expiry</div>
+            <div style={{ ...fieldWrap, minHeight: 24 }}>
+              <div ref={expiryRef} />
             </div>
-          )}
+          </div>
+          <div>
+            <div style={labelStyle}>CVC</div>
+            <div style={{ ...fieldWrap, minHeight: 24 }}>
+              <div ref={cvcRef} />
+            </div>
+          </div>
         </div>
 
-        <div style={{ background: "#f0fff8", border: "1px solid #00b89433", borderRadius: 12, padding: "10px 12px", marginBottom: 12, fontSize: 11, color: "#555", lineHeight: 1.5 }}>
-          Money arrives within ~30 minutes after escrow releases. Stripe&apos;s Instant Payout fee (~1%) is deducted from your payout — In Hand does not add an extra fee.
+        <div style={{ marginBottom: 12 }}>
+          <div style={labelStyle}>Name on card</div>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Name on card"
+            style={{
+              width: "100%",
+              border: "1px solid #d8e0ea",
+              borderRadius: 12,
+              padding: "12px 14px",
+              fontSize: 16,
+              boxSizing: "border-box",
+              outline: "none",
+            }}
+          />
         </div>
+
+        {loading && (
+          <div style={{ textAlign: "center", color: "#aaa", fontSize: 13, marginBottom: 12 }}>Loading secure card form…</div>
+        )}
 
         {error && (
           <div style={{ background: "#fff0f0", borderRadius: 12, padding: "10px 12px", marginBottom: 12, fontSize: 12, color: "#ff6b6b", fontWeight: 600, lineHeight: 1.45 }}>
@@ -189,12 +227,16 @@ export default function InstantPayoutCardModal({ onSuccess, onClose }) {
             fontSize: 15,
             cursor: busy ? "default" : "pointer",
             opacity: busy || loading || !ready ? 0.7 : 1,
+            marginBottom: 12,
           }}
         >
           {busy ? "Saving…" : "Save Debit Card"}
         </button>
-        <div style={{ fontSize: 10, color: "#aaa", textAlign: "center", marginTop: 10 }}>
-          Stays in the app · powered by Stripe
+
+        <div style={{ fontSize: 12, color: "#555", textAlign: "center", lineHeight: 1.5 }}>
+          Money arrives within 30 minutes
+          <br />
+          Stripe 1% fee applies
         </div>
       </div>
     </div>
