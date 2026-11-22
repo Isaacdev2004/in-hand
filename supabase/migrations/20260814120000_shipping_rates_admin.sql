@@ -64,6 +64,10 @@ to authenticated
 using (true);
 
 drop policy if exists "shipping_rates_write_admin" on public.shipping_rates;
+drop policy if exists "shipping_rates_insert_admin" on public.shipping_rates;
+drop policy if exists "shipping_rates_update_admin" on public.shipping_rates;
+drop policy if exists "shipping_rates_delete_admin" on public.shipping_rates;
+
 create policy "shipping_rates_insert_admin"
 on public.shipping_rates
 for insert
